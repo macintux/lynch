@@ -12,7 +12,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, run/2, msg/4, crank/0]).
+-export([start_link/0, run/2, msg/4, crank/0, dump/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -55,12 +55,17 @@ start_link() ->
 %% @end
 %%--------------------------------------------------------------------
 init(_Args) ->
+    {A, B, C} = now(),
+    random:seed(A, B, C),
     {ok, #state{}}.
+
+dump() ->
+    gen_server:call(?SERVER, dump).
 
 crank() ->
     gen_server:call(?SERVER, step).
 
--spec msg(Dest :: msg_dest(), From :: uid(),
+-spec msg(Dest :: msg_dest(), From :: i(),
           Round :: round_id(), Message :: term()) -> 'ok'.
 msg(Dest, From, Round, Message) ->
     gen_server:cast(?SERVER, {msg, Dest, From, Round, Message}).
@@ -71,7 +76,7 @@ run(Count, Module) ->
 run_procs(0, _Module, Procs) ->
     Procs;
 run_procs(Count, Module, Procs) ->
-    {Pid, _Ref} = spawn_monitor(Module, start, [{uid, Count}]),
+    {Pid, _Ref} = spawn_monitor(Module, start, [{uid, randuid()}, {i, Count}]),
     run_procs(Count-1, Module, [Pid|Procs]).
 
 %%--------------------------------------------------------------------
@@ -92,7 +97,11 @@ handle_call({run, Count, Module}, _From, #state{procs=Procs}) ->
     {reply, ok, #state{round=0,procs=run_procs(Count, Module, Procs)}};
 handle_call(step, _From, #state{round=Round,procs=Procs}=State) ->
     lists:foreach(fun(X) -> X ! {step, {round, Round}} end, Procs),
-    {reply, ok, State#state{round=Round+1}}.
+    {reply, ok, State#state{round=Round+1}};
+handle_call(dump, _From, #state{round=Round,procs=Procs}=State) ->
+    io:format("Next round: ~B~n", [Round+1]),
+    lists:foreach(fun(X) -> X ! dump end, Procs),
+    {reply, ok, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -107,8 +116,8 @@ handle_call(step, _From, #state{round=Round,procs=Procs}=State) ->
 handle_cast({msg, all, From, Round, Message}, #state{procs=Procs}=State) ->
     lists:foreach(fun(X) -> X ! {msg, From, Round, Message} end, Procs),
     {noreply, State};
-handle_cast({msg, {uid, Uid}, From, Round, Message}, #state{procs=Procs}=State) ->
-    lists:nth(map_uid(Uid, length(Procs)), Procs) ! {msg, From, Round, Message},
+handle_cast({msg, {i, I}, From, Round, Message}, #state{procs=Procs}=State) ->
+    lists:nth(map_i(I, length(Procs)), Procs) ! {msg, From, Round, Message},
     {noreply, State};
 handle_cast(_Msg, State) ->
     {noreply, State}.
@@ -159,7 +168,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-%% @doc Will map an integer into the cluster UID space. Examples, given
+%% @doc Will map an integer into the cluster size. Examples, given
 %%      a cluster size of 5:
 %%  -6 => 4
 %%  -5 => 5
@@ -170,12 +179,12 @@ code_change(_OldVsn, State, _Extra) ->
 %%   6 => 1
 %%   7 => 2
 %%  10 => 5
--spec map_uid(N :: integer(), Size :: pos_integer()) -> pos_integer().
-map_uid(N, Size) when N < 0 ->
+-spec map_i(N :: integer(), Size :: pos_integer()) -> pos_integer().
+map_i(N, Size) when N < 0 ->
     Size + (N rem Size);
-map_uid(0, Size) ->
+map_i(0, Size) ->
     Size;
-map_uid(N, Size) ->
+map_i(N, Size) ->
     check_for_zero(N rem Size, Size).
 
 -spec check_for_zero(non_neg_integer(), pos_integer()) -> pos_integer().
@@ -183,3 +192,10 @@ check_for_zero(0, Size) ->
     Size;
 check_for_zero(N, _Size) ->
     N.
+
+%% We aren't tracking UIDs anywhere to prevent collision, but since
+%% we're spawning just a few processes, the odds of such a collision
+%% are remarkably low.
+-spec randuid() -> pos_integer().
+randuid() ->
+    random:uniform(500000000).

@@ -10,44 +10,44 @@
 -include("process.hrl").
 
 -behavior(process).
--export([start/1, init/1, step/2, handle_message/4]).
+-export([start/2, step/2, handle_message/4]).
 
 -record(state, {
-          uid,
+          i,
+          u,
           send,
           status=unknown
          }).
 -type state() :: #state{}.
 
--spec start(Id :: uid()) -> no_return().
-start(Id) ->
-    process:start(?MODULE, Id).
-
--spec init(Uid :: uid()) ->
-                  State :: state().
-init({uid, Uid}) ->
-    #state{
-       uid=Uid,
-       send=Uid,
-       status=unknown
-      }.
+-spec start(Uid :: uid(), I :: i()) -> no_return().
+start({uid, Uid}, {i, I}) ->
+    process:start(?MODULE,
+                  I,
+                  #state{
+                     i=I,
+                     u=Uid,
+                     send=Uid,
+                     status=unknown
+                    }).
 
 -spec step(Round :: round_id(), State :: state()) ->
                   {'messages', list(message()), NewState :: state()} |
                   {'noreply', NewState :: state()}.
 step(_Round, #state{send=null}=State) ->
     {noreply, State};
-step(_Round, #state{uid=Uid,send=Send}=State) ->
-    {messages, [{{uid, Uid+1}, Send}], State}.
+step(_Round, #state{i=I,send=Send}=State) ->
+    {messages, [{{i, I+1}, Send}], State}.
 
--spec handle_message(Message :: term(), From :: uid(),
+-spec handle_message(Message :: term(), From :: i(),
                      Round :: round_id(), State :: state()) ->
     {ok, NewState :: term()}.
-handle_message(RcvId, _From, _Round, #state{uid=Uid}=State) when RcvId < Uid ->
+handle_message(RcvId, _From, _Round, #state{u=Uid}=State) when RcvId < Uid ->
     {ok, State#state{send=null}};
-handle_message(RcvId, _From, _Round, #state{uid=Uid}=State) when RcvId == Uid ->
-    io:format("I'm the leader: ~B~n", [Uid]),
+handle_message(RcvId, _From, _Round, #state{u=Uid, i=I}=State) when RcvId == Uid ->
+    io:format("I'm the leader: ~B/~B~n", [I, Uid]),
     {ok, State#state{send=null,status=leader}};
-handle_message(RcvId, _From, _Round, #state{uid=Uid}=State) when RcvId > Uid ->
+handle_message(RcvId, _From, _Round, #state{u=Uid}=State) when RcvId > Uid ->
     {ok, State#state{send=RcvId}}.
 
+    
