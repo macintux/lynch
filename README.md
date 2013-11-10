@@ -9,6 +9,18 @@ The `runtime` library defines a framework for testing algorithms. It
 is in its very early stages, and currently only supports synchronous
 ring topologies (and is largely untested even for that).
 
+**Note**: Much of the below is already out of date, sorry. UID and
+position in cluster are now two distinct concepts, and `testproc` is
+broken.
+
+Also have added `dump` functionality to see the internal state of the
+world.
+
+Next step: update the `step` callback to indicate when the algorithm
+should stop, allowing auto-crank functionality.
+
+----
+
 Example of running the `testproc` process:
 
     1> application:start(runtime).
