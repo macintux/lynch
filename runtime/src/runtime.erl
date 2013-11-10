@@ -7,11 +7,12 @@
 %%% Created :  3 Nov 2013 by John Daily <jd@epep.us>
 %%%-------------------------------------------------------------------
 -module(runtime).
+-include("process.hrl").
 
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, run/2, cluster/1, break/0]).
+-export([start_link/0, run/2, break/0, msg/4, crank/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -55,12 +56,17 @@ start_link() ->
 init(_Args) ->
     {ok, #state{}}.
 
+-spec crank(Round :: round_id()) -> 'ok'.
+crank(Round) ->
+    gen_server:cast(?SERVER, {step, Round}).
+
+-spec msg(Dest :: msg_dest(), From :: uid(),
+          Round :: round_id(), Message :: term()) -> 'ok'.
+msg(Dest, From, Round, Message) ->
+    gen_server:cast(?SERVER, {msg, Dest, From, Round, Message}).
 
 run(Count, Module) ->
     gen_server:call(?SERVER, {run, Count, Module}).
-
-cluster(ring) ->
-    gen_server:call(?SERVER, ring).
 
 break() ->
     gen_server:call(?SERVER, break_pid).
@@ -68,21 +74,8 @@ break() ->
 run_procs(0, _Module, Procs) ->
     Procs;
 run_procs(Count, Module, Procs) ->
-    {Pid, _Ref} = spawn_monitor(Module, init, []),
+    {Pid, _Ref} = spawn_monitor(Module, start, [{uid, Count}]),
     run_procs(Count-1, Module, [Pid|Procs]).
-
-link_ring(Procs) ->
-    link_ring(right, Procs, hd(Procs)),
-    Reversed = lists:reverse(Procs),
-    link_ring(left, Reversed, hd(Reversed)).
-
-link_ring(Dir, [Last], Head) ->
-    io:format("Linking ~p to the ~p to ~p~n", [Last, Dir, Head]),
-    Last ! {Dir, Head};
-link_ring(Dir, [H|T], Head) ->
-    io:format("Linking ~p to the ~p to ~p~n", [H, Dir, hd(T)]),
-    H ! {Dir, hd(T)},
-    link_ring(Dir, T, Head).
 
 %%--------------------------------------------------------------------
 %% @private
@@ -101,10 +94,7 @@ link_ring(Dir, [H|T], Head) ->
 handle_call({run, Count, Module}, _From, #state{procs=Procs}) ->
     {reply, ok, #state{procs=run_procs(Count, Module, Procs)}};
 handle_call(break_pid, _From, #state{procs=Procs}) ->
-    {reply, ok, hd(Procs) ! foo};
-handle_call(ring, _From, #state{procs=Procs}=State) ->
-    link_ring(Procs),
-    {reply, ok, State}.
+    {reply, ok, hd(Procs) ! foo}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -116,6 +106,15 @@ handle_call(ring, _From, #state{procs=Procs}=State) ->
 %%                                  {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
+handle_cast({msg, all, From, Round, Message}, #state{procs=Procs}=State) ->
+    lists:foreach(fun(X) -> X ! {msg, From, Round, Message} end, Procs),
+    {noreply, State};
+handle_cast({msg, {uid, Uid}, From, Round, Message}, #state{procs=Procs}=State) ->
+    lists:nth(map_uid(Uid, length(Procs)), Procs) ! {msg, From, Round, Message},
+    {noreply, State};
+handle_cast({step, Round}, #state{procs=Procs}=State) ->
+    lists:foreach(fun(X) -> X ! {step, {round, Round}} end, Procs),
+    {noreply, State};
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
@@ -165,3 +164,27 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
+%% @doc Will map an integer into the cluster UID space. Examples, given
+%%      a cluster size of 5:
+%%  -6 => 4
+%%  -5 => 5
+%%  -1 => 4
+%%   0 => 5
+%%   1 => 1
+%%   5 => 5
+%%   6 => 1
+%%   7 => 2
+%%  10 => 5
+-spec map_uid(N :: integer(), Size :: pos_integer()) -> pos_integer().
+map_uid(N, Size) when N < 0 ->
+    Size + (N rem Size);
+map_uid(0, Size) ->
+    Size;
+map_uid(N, Size) ->
+    check_for_zero(N rem Size, Size).
+
+-spec check_for_zero(non_neg_integer(), pos_integer()) -> pos_integer().
+check_for_zero(0, Size) ->
+    Size;
+check_for_zero(N, _Size) ->
+    N.
