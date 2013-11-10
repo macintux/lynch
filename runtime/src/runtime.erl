@@ -12,7 +12,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, run/2, break/0, msg/4, crank/1]).
+-export([start_link/0, run/2, msg/4, crank/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -21,6 +21,7 @@
 -define(SERVER, ?MODULE).
 
 -record(state, {
+          round=0,
           procs=[]
          }).
 
@@ -56,9 +57,8 @@ start_link() ->
 init(_Args) ->
     {ok, #state{}}.
 
--spec crank(Round :: round_id()) -> 'ok'.
-crank(Round) ->
-    gen_server:cast(?SERVER, {step, Round}).
+crank() ->
+    gen_server:call(?SERVER, step).
 
 -spec msg(Dest :: msg_dest(), From :: uid(),
           Round :: round_id(), Message :: term()) -> 'ok'.
@@ -67,9 +67,6 @@ msg(Dest, From, Round, Message) ->
 
 run(Count, Module) ->
     gen_server:call(?SERVER, {run, Count, Module}).
-
-break() ->
-    gen_server:call(?SERVER, break_pid).
 
 run_procs(0, _Module, Procs) ->
     Procs;
@@ -92,9 +89,10 @@ run_procs(Count, Module, Procs) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_call({run, Count, Module}, _From, #state{procs=Procs}) ->
-    {reply, ok, #state{procs=run_procs(Count, Module, Procs)}};
-handle_call(break_pid, _From, #state{procs=Procs}) ->
-    {reply, ok, hd(Procs) ! foo}.
+    {reply, ok, #state{round=0,procs=run_procs(Count, Module, Procs)}};
+handle_call(step, _From, #state{round=Round,procs=Procs}=State) ->
+    lists:foreach(fun(X) -> X ! {step, {round, Round}} end, Procs),
+    {reply, ok, State#state{round=Round+1}}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -111,9 +109,6 @@ handle_cast({msg, all, From, Round, Message}, #state{procs=Procs}=State) ->
     {noreply, State};
 handle_cast({msg, {uid, Uid}, From, Round, Message}, #state{procs=Procs}=State) ->
     lists:nth(map_uid(Uid, length(Procs)), Procs) ! {msg, From, Round, Message},
-    {noreply, State};
-handle_cast({step, Round}, #state{procs=Procs}=State) ->
-    lists:foreach(fun(X) -> X ! {step, {round, Round}} end, Procs),
     {noreply, State};
 handle_cast(_Msg, State) ->
     {noreply, State}.
