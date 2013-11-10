@@ -24,14 +24,13 @@ init(Uid) ->
                   {'messages', list(message()), NewState :: term()} |
                   {'noreply', NewState :: term()}.
 step(_Round, {uid, Uid}) ->
-    io:format("~p: ~p~n", [self(), Uid]),
     {messages, [{{uid, Uid - 1}, {hi_from, Uid}}], {uid, Uid}}.
 
 -spec handle_message(Message :: term(), From :: uid(),
                      Round :: round_id(), State :: term()) ->
     {ok, NewState :: term()}.
-handle_message(Message, {uid, From}, {round, Round}, State) ->
-    io:format("~p received ~p from ~B in round ~B~n",
-              [self(), Message, From, Round]),
+handle_message(Message, {uid, From}, {round, Round}, {uid, Uid}=State) ->
+    io:format("~B received ~p from ~B in round ~B~n",
+              [Uid, Message, From, Round]),
     {ok, State}.
 
