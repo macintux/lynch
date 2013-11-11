@@ -9,42 +9,52 @@ The `runtime` library defines a framework for testing algorithms. It
 is in its very early stages, and currently only supports synchronous
 ring topologies (and is largely untested even for that).
 
-**Note**: Much of the below is already out of date, sorry. UID and
-position in cluster are now two distinct concepts, and `testproc` is
-broken.
+So far it has one algorithm implemented, the first in the book: LCR.
 
-Also have added `dump` functionality to see the internal state of the
-world.
-
-Next step: update the `step` callback to indicate when the algorithm
-should stop, allowing auto-crank functionality.
-
-----
-
-Example of running the `testproc` process:
-
-    1> application:start(runtime).
+    107> application:start(runtime).
     ok
-    2> runtime:run(3, testproc).
+    108> runtime:run(3, lcr).
     ok
-    3> runtime:crank().
-    3 received {hi_from,1} from 1 in round 1
-    1 received {hi_from,2} from 2 in round 1
-    2 received {hi_from,3} from 3 in round 1
+    109> runtime:crank(verbose).
+    Next round: 1
+    Proc #1 (108836655) will send 108836655 (status unknown)
+    Proc #2 (403276418) will send 403276418 (status unknown)
+    Proc #3 (230776318) will send 230776318 (status unknown)
     ok
-    4> runtime:crank().
-    3 received {hi_from,1} from 1 in round 2
-    1 received {hi_from,2} from 2 in round 2
-    2 received {hi_from,3} from 3 in round 2
+    110> runtime:crank(verbose).
+    Next round: 2
+    Proc #1 (108836655) will send 230776318 (status unknown)
+    Proc #2 (403276418) will send null (status unknown)
+    Proc #3 (230776318) will send 403276418 (status unknown)
     ok
+    111> runtime:crank(verbose).
+    Next round: 3
+    Proc #1 (108836655) will send 403276418 (status unknown)
+    Proc #2 (403276418) will send null (status unknown)
+    Proc #3 (230776318) will send 403276418 (status unknown)
+    I'm the leader: 2/403276418
+    ok
+    112> runtime:crank().
+    Cluster member crashed
+    ok
+    113>
+    =ERROR REPORT==== 10-Nov-2013::21:25:46 ===
+    ** Generic server runtime terminating
+    ** Last message in was {'DOWN',#Ref<0.0.0.41>,process,<0.43.0>,normal}
+    ** When Server state == {state,6,
+                                   [<0.44.0>,<0.43.0>,<0.42.0>]}
+    ** Reason for termination ==
+    ** "Cluster unstable"
 
-The `runtime` application defines a `crank/0` function which "turns
+The `runtime` application defines `crank/{0,1}` functions which "turn
 the crank" on the processes, moving the round (as defined in Lynch's
-synchronous algorithms) forward each time.
+synchronous algorithms) forward each time. `crank(verbose)` will print
+a status dump before executing the round.
 
-In the above example, each process sends one message to the process
-with UID one less than its own.
+The reason for the crash at the end of the above example? The process
+which is elected leader indicates a stop, so next time its `step`
+function is called the tail recursive loop terminates.
 
 The `process` module defines a `process` behavior with a (thus far)
-simple interface: `start/1`, `init/1` (probably should combine those),
-`step/2` and `handle_message/4`.
+simple interface: `start/2`, `step/2`, `handle_message/4`, and
+`dump/1`.

@@ -10,7 +10,7 @@
 -include("process.hrl").
 
 -behavior(process).
--export([start/2, step/2, handle_message/4]).
+-export([start/2, step/2, handle_message/4, dump/1]).
 
 -record(state, {
           i,
@@ -33,7 +33,10 @@ start({uid, Uid}, {i, I}) ->
 
 -spec step(Round :: round_id(), State :: state()) ->
                   {'messages', list(message()), NewState :: state()} |
-                  {'noreply', NewState :: state()}.
+                  {'noreply', NewState :: state()} |
+                  {'stop', NewState :: term()}.
+step(_Round, #state{status=leader}=State) ->
+    {stop, State};
 step(_Round, #state{send=null}=State) ->
     {noreply, State};
 step(_Round, #state{i=I,send=Send}=State) ->
@@ -51,3 +54,7 @@ handle_message(RcvId, _From, _Round, #state{u=Uid}=State) when RcvId > Uid ->
     {ok, State#state{send=RcvId}}.
 
     
+-spec dump(State :: state()) -> iolist().
+dump(#state{i=I, u=Uid, send=Send, status=Status}) ->
+    io_lib:format("Proc #~B (~B) will send ~p (status ~p)~n",
+                  [I, Uid, Send, Status]).

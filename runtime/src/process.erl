@@ -15,17 +15,21 @@
 
 -callback step(Round :: round_id(), State :: term()) ->
     {'messages', list(message()), NewState :: term()} |
-    {'noreply', NewState :: term()}.
+    {'noreply', NewState :: term()} |
+    {'stop', NewState :: term()}.
 
 -callback handle_message(Message :: term(), From :: uid(),
                          Round :: round_id(), State :: term()) ->
     {ok, NewState :: term()}.
 
+-callback dump(State :: term()) -> iolist().
+
 -record(state, {
           module,
           round=0,
           i=-1,
-          algorithm_state
+          algorithm_state,
+          stop=false
          }).
 -type state() :: #state{}.
 
@@ -38,41 +42,43 @@ start(Module, I, AlgState) ->
                       module=Module
                      }).
 
--spec wait_for_crank(state()) -> no_return().
-wait_for_crank(#state{algorithm_state=AlgState,i=I,
+-spec wait_for_crank(state()) -> done.
+wait_for_crank(#state{stop=true}) ->
+    done;
+wait_for_crank(#state{algorithm_state=AlgState,
                       round=Round, module=Module}=State) ->
     receive
         {step, {round, Round}} ->
-            wait_for_crank(State#state{
-                             algorithm_state=
-                                 handle_step_response(
-                                   Module:step({round, Round+1}, AlgState),
-                                   {i, I},
-                                   {round, Round+1}
-                                  ),
-                             round=Round+1
-                            });
+            wait_for_crank(handle_step_response(
+                             Module:step({round, Round+1}, AlgState),
+                             State));
         {msg, {i, From}, {round, Round}, Msg} ->
             {ok, NewAlgState} =
                 Module:handle_message(Msg, {i, From}, {round, Round}, AlgState),
             wait_for_crank(State#state{
                              algorithm_state=NewAlgState});
         dump ->
-            io:format("===~n~p~n", [AlgState]),
+            io:format("~ts", [Module:dump(AlgState)]),
             wait_for_crank(State)
     end.
 
 -spec handle_step_response({'messages',
                             Messages :: list(message()),
                             AlgState :: term()} |
-                           {'noreply', AlgState :: term()},
-                           From :: i(),
-                           Round :: round_id()) ->
-                                  AlgState :: term().
-handle_step_response({messages, Messages, State}, From, Round) ->
-    lists:foreach(fun({Dest, Message}) -> runtime:msg(Dest, From, Round, Message) end,
+                           {'noreply', AlgState :: term()} |
+                           {'stop', AlgState :: term()},
+                           State :: state()) -> NewState :: state().
+handle_step_response({messages, Messages, AlgState},
+                     #state{round=Round, i=I}=State) ->
+    lists:foreach(fun({Dest, Message}) -> runtime:msg(Dest, {i, I},
+                                                      {round, Round+1}, Message)
+                  end,
                   Messages),
-    State;
-handle_step_response({noreply, State}, _From, _Round) ->
-    State.
+    State#state{round=Round+1, algorithm_state=AlgState};
+handle_step_response({noreply, AlgState}, #state{round=Round}=State) ->
+    State#state{round=Round+1, algorithm_state=AlgState};
+handle_step_response({stop, AlgState}, #state{round=Round}=State) ->
+    State#state{round=Round+1, algorithm_state=AlgState, stop=true}.
+
+
                           

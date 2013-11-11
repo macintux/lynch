@@ -12,7 +12,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, run/2, msg/4, crank/0, dump/0]).
+-export([start_link/0, run/2, msg/4, crank/0, crank/1, dump/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -63,6 +63,10 @@ dump() ->
     gen_server:call(?SERVER, dump).
 
 crank() ->
+    gen_server:call(?SERVER, step).
+
+crank(verbose) ->
+    gen_server:call(?SERVER, dump),
     gen_server:call(?SERVER, step).
 
 -spec msg(Dest :: msg_dest(), From :: i(),
