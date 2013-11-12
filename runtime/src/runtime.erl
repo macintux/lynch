@@ -69,7 +69,7 @@ crank(verbose) ->
     gen_server:call(?SERVER, dump),
     gen_server:call(?SERVER, step).
 
--spec msg(Dest :: msg_dest(), From :: i(),
+-spec msg(Dest :: loc(), From :: loc(),
           Round :: round_id(), Message :: term()) -> 'ok'.
 msg(Dest, From, Round, Message) ->
     gen_server:cast(?SERVER, {msg, Dest, From, Round, Message}).
@@ -121,6 +121,9 @@ handle_cast({msg, all, From, Round, Message}, #state{procs=Procs}=State) ->
     lists:foreach(fun(X) -> X ! {msg, From, Round, Message} end, Procs),
     {noreply, State};
 handle_cast({msg, {i, I}, From, Round, Message}, #state{procs=Procs}=State) ->
+    lists:nth(map_i(I, length(Procs)), Procs) ! {msg, From, Round, Message},
+    {noreply, State};
+handle_cast({msg, {i, I, _Dir, _Rel}, From, Round, Message}, #state{procs=Procs}=State) ->
     lists:nth(map_i(I, length(Procs)), Procs) ! {msg, From, Round, Message},
     {noreply, State};
 handle_cast(_Msg, State) ->

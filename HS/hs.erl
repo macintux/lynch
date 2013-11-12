@@ -43,16 +43,16 @@ step(_Round, #state{'send+'=null,'send-'=null}=State) ->
     {noreply, State#state{halfmatch=false}};
 step(_Round, #state{i=I, 'send+'=SendPlus,'send-'=null}=State) ->
     {messages, [
-                {{i, I+1}, SendPlus}
+                {{i, I+1, right, 1}, SendPlus}
                ], State#state{'send+'=null,halfmatch=false}};
 step(_Round, #state{i=I, 'send+'=null,'send-'=SendMinus}=State) ->
     {messages, [
-                {{i, I-1}, SendMinus}
+                {{i, I-1, left, 1}, SendMinus}
                ], State#state{'send-'=null,halfmatch=false}};
 step(_Round, #state{i=I, 'send+'=SendPlus,'send-'=SendMinus}=State) ->
     {messages, [
-                {{i, I+1}, SendPlus},
-                {{i, I-1}, SendMinus}
+                {{i, I+1, right, 1}, SendPlus},
+                {{i, I-1, left, 1}, SendMinus}
                ], State#state{'send+'=null,'send-'=null,halfmatch=false}}.
 
 -spec handle_message(Message :: term(), From :: i(),
@@ -60,37 +60,37 @@ step(_Round, #state{i=I, 'send+'=SendPlus,'send-'=SendMinus}=State) ->
     {ok, NewState :: term()}.
 handle_message({V, out, _H}, _From, _Round,
                #state{u=U}=State) when V < U ->
-    {ok, State}; %% Drop the message. This is not explicit in the book's algorithm
-handle_message({V, out, H}, {i, From}, _Round,
-               #state{u=U,i=I}=State) when From =:= I-1, V > U, H > 1 ->
+    {ok, State}; %% Drop the message. This is not explicit in the book's detailed algorithm
+handle_message({V, out, H}, {i, _From, left, 1}, _Round,
+               #state{u=U,i=_I}=State) when V > U, H > 1 ->
     {ok, State#state{'send+'={V, out, H-1}}};
-handle_message({V, out, H}, {i, From}, _Round,
-               #state{u=U,i=I}=State) when From =:= I-1, V > U, H =:= 1 ->
+handle_message({V, out, H}, {i, _From, left, 1}, _Round,
+               #state{u=U,i=_I}=State) when V > U, H =:= 1 ->
     {ok, State#state{'send-'={V, in, 1}}};
-handle_message({V, out, _H}, {i, From}, _Round,
-               #state{u=U,i=I}=State) when From =:= I-1, V =:= U ->
+handle_message({V, out, _H}, {i, _From, left, 1}, _Round,
+               #state{u=U,i=I}=State) when V =:= U ->
     io:format("I'm the leader: ~B/~B~n", [I, U]),
     {stop, State#state{status=leader}};
-handle_message({V, out, H}, {i, From}, _Round,
-               #state{u=U,i=I}=State) when From =:= I+1, V > U, H > 1 ->
+handle_message({V, out, H}, {i, _From, right, 1}, _Round,
+               #state{u=U,i=_I}=State) when V > U, H > 1 ->
     {ok, State#state{'send-'={V, out, H-1}}};
-handle_message({V, out, H}, {i, From}, _Round,
-               #state{u=U,i=I}=State) when From =:= I+1, V > U, H =:= 1 ->
+handle_message({V, out, H}, {i, _From, right, 1}, _Round,
+               #state{u=U,i=_I}=State) when V > U, H =:= 1 ->
     {ok, State#state{'send+'={V, in, 1}}};
-handle_message({V, out, _H}, {i, From}, _Round,
-               #state{u=U,i=I}=State) when From =:= I+1, V =:= U ->
+handle_message({V, out, _H}, {i, _From, right, 1}, _Round,
+               #state{u=U,i=I}=State) when V =:= U ->
     io:format("I'm the leader: ~B/~B~n", [I, U]),
     {stop, State#state{status=leader}};
-handle_message({V, in, 1}, {i, From}, _Round,
-               #state{u=U,i=I}=State) when From =:= I-1, V =/= U ->
+handle_message({V, in, 1}, {i, _From, left, 1}, _Round,
+               #state{u=U,i=_I}=State) when V =/= U ->
     {ok, State#state{'send+'={V, in, 1}}};
-handle_message({V, in, 1}, {i, From}, _Round,
-               #state{u=U,i=I}=State) when From =:= I+1, V =/= U ->
+handle_message({V, in, 1}, {i, _From, right, 1}, _Round,
+               #state{u=U,i=_I}=State) when V =/= U ->
     {ok, State#state{'send-'={V, in, 1}}};
-handle_message({U, in, 1}, {i, _From}, _Round,
+handle_message({U, in, 1}, _I, _Round,
                #state{u=U,halfmatch=false}=State) ->
     {ok, State#state{halfmatch=true}};
-handle_message({U, in, 1}, {i, _From}, _Round,
+handle_message({U, in, 1}, _I, _Round,
                #state{u=U,halfmatch=true,phase=Phase}=State) ->
     NewPhase = Phase + 1,
     {ok, State#state{'send+'={U, out, trunc(math:pow(2, NewPhase))},
@@ -105,4 +105,3 @@ dump(#state{i=I, u=Uid, 'send+'=SendPlus, 'send-'=SendMinus,
             status=Status, phase=Phase}) ->
     io_lib:format("Proc #~B (~B) : send+ ~p / send- ~p (status ~p, phase ~B)~n",
                   [I, Uid, SendPlus, SendMinus, Status, Phase]).
-

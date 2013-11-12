@@ -52,9 +52,9 @@ wait_for_crank(#state{algorithm_state=AlgState,
             wait_for_crank(handle_step_response(
                              Module:step({round, Round+1}, AlgState),
                              State));
-        {msg, {i, From}, {round, Round}, Msg} ->
+        {msg, From, {round, Round}, Msg} ->
             {ok, NewAlgState} =
-                Module:handle_message(Msg, {i, From}, {round, Round}, AlgState),
+                Module:handle_message(Msg, From, {round, Round}, AlgState),
             wait_for_crank(State#state{
                              algorithm_state=NewAlgState});
         dump ->
@@ -70,8 +70,19 @@ wait_for_crank(#state{algorithm_state=AlgState,
                            State :: state()) -> NewState :: state().
 handle_step_response({messages, Messages, AlgState},
                      #state{round=Round, i=I}=State) ->
-    lists:foreach(fun({Dest, Message}) -> runtime:msg(Dest, {i, I},
-                                                      {round, Round+1}, Message)
+    %% Describe the "From" for this message in the same terms as the
+    %% "To". If the sender describes a relative position (left or
+    %% right with a number of servers) then pass the source for the
+    %% message the same way.
+    lists:foreach(fun({{i, _D}=Dest, Message}) ->
+                          runtime:msg(Dest, {i, I},
+                                      {round, Round+1}, Message);
+                     ({{i, _D, left, Rel}=Dest, Message}) ->
+                          runtime:msg(Dest, {i, I, right, Rel},
+                                      {round, Round+1}, Message);
+                     ({{i, _D, right, Rel}=Dest, Message}) ->
+                          runtime:msg(Dest, {i, I, left, Rel},
+                                      {round, Round+1}, Message)
                   end,
                   Messages),
     State#state{round=Round+1, algorithm_state=AlgState};
@@ -79,6 +90,3 @@ handle_step_response({noreply, AlgState}, #state{round=Round}=State) ->
     State#state{round=Round+1, algorithm_state=AlgState};
 handle_step_response({stop, AlgState}, #state{round=Round}=State) ->
     State#state{round=Round+1, algorithm_state=AlgState, stop=true}.
-
-
-                          
