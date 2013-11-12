@@ -1,15 +1,14 @@
 lynch
 =====
 
-Implement algorithms from Nancy Lynch's Distributed Algorithms book
+Implement algorithms from Nancy Lynch's Distributed Algorithms book,
+in Erlang.
 
 ### runtime
 
 The `runtime` library defines a framework for testing algorithms. It
 is in its very early stages, and currently only supports synchronous
 ring topologies (and is largely untested even for that).
-
-So far it has one algorithm implemented, the first in the book: LCR.
 
     107> application:start(runtime).
     ok
