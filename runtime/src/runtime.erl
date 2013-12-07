@@ -99,6 +99,8 @@ run_procs(Count, Module, Procs) ->
 %%--------------------------------------------------------------------
 handle_call({run, Count, Module}, _From, #state{procs=Procs}) ->
     {reply, ok, #state{round=0,procs=run_procs(Count, Module, Procs)}};
+handle_call(step, _From, #state{procs=[]}=State) ->
+    {reply, noprocs, State};
 handle_call(step, _From, #state{round=Round,procs=Procs}=State) ->
     lists:foreach(fun(X) -> X ! {step, {round, Round}} end, Procs),
     {reply, ok, State#state{round=Round+1}};
