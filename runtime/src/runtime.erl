@@ -97,8 +97,10 @@ run_procs(Count, Module, Procs) ->
 %%                                   {stop, Reason, State}
 %% @end
 %%--------------------------------------------------------------------
-handle_call({run, Count, Module}, _From, #state{procs=Procs}) ->
-    {reply, ok, #state{round=0,procs=run_procs(Count, Module, Procs)}};
+handle_call({run, Count, Module}, _From, #state{procs=[]}) ->
+    {reply, ok, #state{round=0,procs=run_procs(Count, Module, [])}};
+handle_call({run, _Count, _Module}, _From, State) ->
+    {reply, already_running, State};
 handle_call(step, _From, #state{procs=[]}=State) ->
     {reply, noprocs, State};
 handle_call(step, _From, #state{round=Round,procs=Procs}=State) ->
