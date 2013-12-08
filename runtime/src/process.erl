@@ -5,13 +5,22 @@
 %%% @end
 %%% Created :  3 Nov 2013 by John Daily <jd@epep.us>
 
-%% Should consider making this a gen_fsm
 -module(process).
+-behavior(gen_server).
 -include("process.hrl").
 
--export([start/3]).
+-export([step/2, dump/1]).
 
--callback start(Uid :: uid(), I :: i()) -> no_return().
+%% API
+-export([start_link/4]).
+
+%% gen_server callbacks
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2,
+         terminate/2, code_change/3]).
+
+%% Callbacks for algorithms to define when implementing the process
+%% behavior
+-callback init(Uid :: uid(), I :: i(), Extra :: list()) -> term().
 
 -callback step(Round :: round_id(), State :: term()) ->
     {'messages', list(message()), NewState :: term()} |
@@ -24,6 +33,7 @@
 
 -callback dump(State :: term()) -> iolist().
 
+
 -record(state, {
           module,
           round=0,
@@ -33,41 +43,80 @@
          }).
 -type state() :: #state{}.
 
--spec start(Module :: atom(), I :: pos_integer(),
-            AlgState :: term()) -> no_return().
-start(Module, I, AlgState) ->
-    wait_for_crank(#state{
-                      algorithm_state=AlgState,
-                      i=I,
-                      module=Module
-                     }).
+-spec step(Pid :: pid(), Round :: non_neg_integer()) -> 'continue'|'stop'.
+step(Pid, Round) ->
+    gen_server:call(Pid, {step, {round, Round}}).
 
--spec wait_for_crank(state()) -> done.
-wait_for_crank(#state{stop=true}) ->
-    done;
-wait_for_crank(#state{algorithm_state=AlgState,
-                      round=Round, module=Module}=State) ->
-    receive
-        {step, {round, Round}} ->
-            wait_for_crank(handle_step_response(
-                             Module:step({round, Round+1}, AlgState),
-                             State));
-        {msg, From, {round, Round}, Msg} ->
-            {ok, NewAlgState} =
-                Module:handle_message(Msg, From, {round, Round}, AlgState),
-            wait_for_crank(State#state{
-                             algorithm_state=NewAlgState});
-        dump ->
-            io:format("~ts", [Module:dump(AlgState)]),
-            wait_for_crank(State)
-    end.
+-spec dump(Pid :: pid()) -> iolist().
+dump(Pid) ->
+    gen_server:call(Pid, dump).
+
+
+%%%===================================================================
+%%% API
+%%%===================================================================
+
+%%--------------------------------------------------------------------
+%% @doc
+%% Starts a process to implement the algorithm
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec start_link(AlgorithmModule :: atom(),
+                 Uid :: uid(),
+                 I :: i(),
+                 Extra :: list()) -> {'ok', pid()} | 'ignore' | {'error', term()}.
+start_link(AlgorithmModule, Uid, I, Extra) ->
+    gen_server:start_link(?MODULE, [AlgorithmModule, Uid, I, Extra], []).
+
+%% -spec init([AlgorithmModule :: atom(), Uid :: uid(),
+%%             I :: pos_integer(), Extra :: list()]) -> {ok, state()}.
+-spec init(list()) -> {ok, state()}.
+init([AlgorithmModule, Uid, I, Extra]) ->
+    AlgState = AlgorithmModule:init(Uid, I, Extra),
+    {ok, #state{
+            algorithm_state=AlgState,
+            i=I,
+            module=AlgorithmModule
+           }
+    }.
+
+%%--------------------------------------------------------------------
+%% @private
+%% @doc
+%% Handling call messages
+%%
+%% @end
+%%--------------------------------------------------------------------
+-spec handle_call(Request :: term(),
+                  From :: {pid(), Tag :: term()},
+                  State :: state()) ->
+                                  {reply, term(), state()}.
+handle_call({step, {round, _Round}}, _From, #state{stop=true}=State) ->
+    {reply, already_stopped, State};
+handle_call({step, {round, Round}}, _From,
+            #state{algorithm_state=AlgState, module=Module, round=Round}=State) ->
+    {ContinueOrStop, NewAlgState} = handle_step_response(
+                                      Module:step({round, Round+1}, AlgState),
+                                      State),
+    {reply, ContinueOrStop, State#state{algorithm_state=NewAlgState}};
+handle_call({msg, From, {round, Round}, Msg}, _From,
+            #state{algorithm_state=AlgState, module=Module, round=Round}=State) ->
+    {ok, NewAlgState} =
+        Module:handle_message(Msg, From, {round, Round}, AlgState),
+    {reply, continue, State#state{algorithm_state=NewAlgState}};
+handle_call(dump, _From, #state{module=Module,algorithm_state=AlgState}=State) ->
+    {reply, Module:dump(AlgState), State}.
+
+
 
 -spec handle_step_response({'messages',
                             Messages :: list(message()),
                             AlgState :: term()} |
                            {'noreply', AlgState :: term()} |
                            {'stop', AlgState :: term()},
-                           State :: state()) -> NewState :: state().
+                           State :: state()) ->
+                                  {'continue'|'stop', NewState :: state()}.
 handle_step_response({messages, Messages, AlgState},
                      #state{round=Round, i=I}=State) ->
     %% Describe the "From" for this message in the same terms as the
@@ -85,8 +134,22 @@ handle_step_response({messages, Messages, AlgState},
                                       {round, Round+1}, Message)
                   end,
                   Messages),
-    State#state{round=Round+1, algorithm_state=AlgState};
+    {continue, State#state{round=Round+1, algorithm_state=AlgState}};
 handle_step_response({noreply, AlgState}, #state{round=Round}=State) ->
-    State#state{round=Round+1, algorithm_state=AlgState};
+    {continue, State#state{round=Round+1, algorithm_state=AlgState}};
 handle_step_response({stop, AlgState}, #state{round=Round}=State) ->
-    State#state{round=Round+1, algorithm_state=AlgState, stop=true}.
+    {stop, State#state{round=Round+1, algorithm_state=AlgState, stop=true}}.
+
+
+handle_cast(_Msg, State) ->
+    {noreply, State}.
+
+handle_info(_Info, State) ->
+    {noreply, State}.
+
+terminate(_Reason, _State) ->
+    ok.
+
+code_change(_OldVsn, State, _Extra) ->
+    {ok, State}.
+

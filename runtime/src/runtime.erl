@@ -22,6 +22,7 @@
 
 -record(state, {
           round=0,
+          stop=false,
           procs=[]
          }).
 
@@ -67,7 +68,7 @@ crank() ->
 
 crank(verbose) ->
     gen_server:call(?SERVER, dump),
-    gen_server:call(?SERVER, step).
+    crank().
 
 -spec msg(Dest :: loc(), From :: loc(),
           Round :: round_id(), Message :: term()) -> 'ok'.
@@ -80,7 +81,7 @@ run(Count, Module) ->
 run_procs(0, _Module, Procs) ->
     Procs;
 run_procs(Count, Module, Procs) ->
-    {Pid, _Ref} = spawn_monitor(Module, start, [{uid, randuid()}, {i, Count}]),
+    {ok, Pid} = process:start_link(Module, {uid, randuid()}, {i, Count}, []),
     run_procs(Count-1, Module, [Pid|Procs]).
 
 %%--------------------------------------------------------------------
@@ -99,17 +100,36 @@ run_procs(Count, Module, Procs) ->
 %%--------------------------------------------------------------------
 handle_call({run, Count, Module}, _From, #state{procs=[]}) ->
     {reply, ok, #state{round=0,procs=run_procs(Count, Module, [])}};
+handle_call({run, Count, Module}, _From, #state{stop=true}) ->
+    %% Start over
+    {reply, ok, #state{round=0,procs=run_procs(Count, Module, [])}};
 handle_call({run, _Count, _Module}, _From, State) ->
     {reply, already_running, State};
 handle_call(step, _From, #state{procs=[]}=State) ->
     {reply, noprocs, State};
+handle_call(step, _From, #state{stop=true}=State) ->
+    {reply, done, State};
 handle_call(step, _From, #state{round=Round,procs=Procs}=State) ->
-    lists:foreach(fun(X) -> X ! {step, {round, Round}} end, Procs),
-    {reply, ok, State#state{round=Round+1}};
+    %% If any of our processes indicate the algorithm is complete by
+    %% returning stop, we need to also return stop.
+    %%
+    %% Hate using cases at all, much less nested, probably refactor.
+    {Reply, NewState} =
+        case lists:foldl(fun(X, Sum) ->
+                                 case process:step(X, Round) of
+                                     continue -> 0;
+                                     stop -> 1
+                                 end
+                         end,
+                         0, Procs) of
+            0 -> {ok, State#state{round=Round+1}};
+            _ -> {stop, State#state{round=Round+1, stop=true}}
+        end,
+    {reply, Reply, NewState};
 handle_call(dump, _From, #state{round=Round,procs=Procs}=State) ->
-    io:format("Next round: ~B~n", [Round+1]),
-    lists:foreach(fun(X) -> X ! dump end, Procs),
-    {reply, ok, State}.
+    Dump = [io_lib:format("Next round: ~B~n", [Round+1]) |
+            lists:map(fun(X) -> process:dump(X) end, Procs)],
+    {reply, Dump, State}.
 
 %%--------------------------------------------------------------------
 %% @private

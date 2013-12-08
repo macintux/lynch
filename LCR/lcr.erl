@@ -10,7 +10,7 @@
 -include("process.hrl").
 
 -behavior(process).
--export([start/2, step/2, handle_message/4, dump/1]).
+-export([init/3, step/2, handle_message/4, dump/1]).
 
 -record(state, {
           i,
@@ -20,16 +20,14 @@
          }).
 -type state() :: #state{}.
 
--spec start(Uid :: uid(), I :: i()) -> no_return().
-start({uid, Uid}, {i, I}) ->
-    process:start(?MODULE,
-                  I,
-                  #state{
-                     i=I,
-                     u=Uid,
-                     send=Uid,
-                     status=unknown
-                    }).
+-spec init(Uid :: uid(), I :: i(), Extra::list()) -> state().
+init({uid, Uid}, {i, I}, _Extra) ->
+    #state{
+       i=I,
+       u=Uid,
+       send=Uid,
+       status=unknown
+      }.
 
 -spec step(Round :: round_id(), State :: state()) ->
                   {'messages', list(message()), NewState :: state()} |
