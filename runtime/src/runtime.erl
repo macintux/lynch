@@ -75,7 +75,7 @@ crank(verbose) ->
 msg(Dest, From, Round, Message) ->
     gen_server:cast(?SERVER, {msg, Dest, From, Round, Message}).
 
-run(Count, Module) ->
+run(Module, Count) ->
     gen_server:call(?SERVER, {run, Count, Module}).
 
 run_procs(0, _Module, Procs) ->
