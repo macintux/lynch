@@ -9,7 +9,7 @@
 -behavior(gen_server).
 -include("process.hrl").
 
--export([step/2, dump/1]).
+-export([step/2, dump/1, message/4]).
 
 %% API
 -export([start_link/4]).
@@ -51,6 +51,10 @@ step(Pid, Round) ->
 dump(Pid) ->
     gen_server:call(Pid, dump).
 
+-spec message(Pid :: pid(), From :: loc(),
+              Round :: round_id(), Message :: term()) -> 'continue'.
+message(Pid, From, Round, Message) ->
+    gen_server:call(Pid, {msg, From, Round, Message}).
 
 %%%===================================================================
 %%% API
@@ -72,11 +76,11 @@ start_link(AlgorithmModule, Uid, I, Extra) ->
 %% -spec init([AlgorithmModule :: atom(), Uid :: uid(),
 %%             I :: pos_integer(), Extra :: list()]) -> {ok, state()}.
 -spec init(list()) -> {ok, state()}.
-init([AlgorithmModule, Uid, I, Extra]) ->
+init([AlgorithmModule, Uid, {i, I_int}=I, Extra]) ->
     AlgState = AlgorithmModule:init(Uid, I, Extra),
     {ok, #state{
             algorithm_state=AlgState,
-            i=I,
+            i=I_int,
             module=AlgorithmModule
            }
     }.
@@ -96,10 +100,11 @@ handle_call({step, {round, _Round}}, _From, #state{stop=true}=State) ->
     {reply, already_stopped, State};
 handle_call({step, {round, Round}}, _From,
             #state{algorithm_state=AlgState, module=Module, round=Round}=State) ->
+    NewState = State#state{round=Round+1},
     {ContinueOrStop, NewAlgState} = handle_step_response(
                                       Module:step({round, Round+1}, AlgState),
-                                      State),
-    {reply, ContinueOrStop, State#state{algorithm_state=NewAlgState}};
+                                      NewState),
+    {reply, ContinueOrStop, NewState#state{algorithm_state=NewAlgState}};
 handle_call({msg, From, {round, Round}, Msg}, _From,
             #state{algorithm_state=AlgState, module=Module, round=Round}=State) ->
     {ok, NewAlgState} =
@@ -134,11 +139,11 @@ handle_step_response({messages, Messages, AlgState},
                                       {round, Round+1}, Message)
                   end,
                   Messages),
-    {continue, State#state{round=Round+1, algorithm_state=AlgState}};
+    {continue, State#state{algorithm_state=AlgState}};
 handle_step_response({noreply, AlgState}, #state{round=Round}=State) ->
-    {continue, State#state{round=Round+1, algorithm_state=AlgState}};
+    {continue, State#state{algorithm_state=AlgState}};
 handle_step_response({stop, AlgState}, #state{round=Round}=State) ->
-    {stop, State#state{round=Round+1, algorithm_state=AlgState, stop=true}}.
+    {stop, State#state{algorithm_state=AlgState, stop=true}}.
 
 
 handle_cast(_Msg, State) ->

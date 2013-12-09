@@ -67,7 +67,7 @@ crank() ->
     gen_server:call(?SERVER, step).
 
 crank(verbose) ->
-    gen_server:call(?SERVER, dump),
+    io:format("~ts", [dump()]),
     crank().
 
 -spec msg(Dest :: loc(), From :: loc(),
@@ -116,6 +116,7 @@ handle_call(step, _From, #state{round=Round,procs=Procs}=State) ->
     %% Hate using cases at all, much less nested, probably refactor.
     {Reply, NewState} =
         case lists:foldl(fun(X, Sum) ->
+                                 Sum +
                                  case process:step(X, Round) of
                                      continue -> 0;
                                      stop -> 1
@@ -142,13 +143,13 @@ handle_call(dump, _From, #state{round=Round,procs=Procs}=State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_cast({msg, all, From, Round, Message}, #state{procs=Procs}=State) ->
-    lists:foreach(fun(X) -> X ! {msg, From, Round, Message} end, Procs),
+    lists:foreach(fun(X) -> process:message(X, From, Round, Message) end, Procs),
     {noreply, State};
 handle_cast({msg, {i, I}, From, Round, Message}, #state{procs=Procs}=State) ->
-    lists:nth(map_i(I, length(Procs)), Procs) ! {msg, From, Round, Message},
+    process:message(lists:nth(map_i(I, length(Procs)), Procs), From, Round, Message),
     {noreply, State};
 handle_cast({msg, {i, I, _Dir, _Rel}, From, Round, Message}, #state{procs=Procs}=State) ->
-    lists:nth(map_i(I, length(Procs)), Procs) ! {msg, From, Round, Message},
+    process:message(lists:nth(map_i(I, length(Procs)), Procs), From, Round, Message),
     {noreply, State};
 handle_cast(_Msg, State) ->
     {noreply, State}.
