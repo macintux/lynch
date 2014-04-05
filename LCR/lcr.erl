@@ -42,14 +42,14 @@ step(_Round, #state{i=I,send=Send}=State) ->
 
 -spec handle_message(Message :: term(), From :: i(),
                      Round :: round_id(), State :: state()) ->
-    {ok, NewState :: term()}.
+    {'continue'|'stop', NewState :: term()}.
 handle_message(RcvId, _From, _Round, #state{u=Uid}=State) when RcvId < Uid ->
-    {ok, State#state{send=null}};
+    {continue, State#state{send=null}};
 handle_message(RcvId, _From, _Round, #state{u=Uid, i=I}=State) when RcvId == Uid ->
     io:format("I'm the leader: ~B/~B~n", [I, Uid]),
-    {ok, State#state{send=null,status=leader}};
+    {stop, State#state{send=null,status=leader}};
 handle_message(RcvId, _From, _Round, #state{u=Uid}=State) when RcvId > Uid ->
-    {ok, State#state{send=RcvId}}.
+    {continue, State#state{send=RcvId}}.
 
     
 -spec dump(State :: state()) -> iolist().

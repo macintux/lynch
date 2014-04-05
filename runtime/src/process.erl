@@ -57,7 +57,7 @@ dump(Pid) ->
     gen_server:call(Pid, dump).
 
 -spec message(Pid :: pid(), From :: loc(),
-              Round :: round_id(), Message :: term()) -> 'continue'.
+              Round :: round_id(), Message :: term()) -> 'continue'|'stop'.
 message(Pid, From, Round, Message) ->
     gen_server:call(Pid, {msg, From, Round, Message}).
 
@@ -111,9 +111,9 @@ handle_call({prep, {round, Round}}, _From,
     {reply, ContinueOrStop, NewState};
 handle_call({msg, From, {round, Round}, Msg}, _From,
             #state{algorithm_state=AlgState, module=Module, round=Round}=State) ->
-    {ok, NewAlgState} =
+    {ContinueOrStop, NewAlgState} =
         Module:handle_message(Msg, From, {round, Round}, AlgState),
-    {reply, continue, State#state{algorithm_state=NewAlgState}};
+    {reply, ContinueOrStop, State#state{algorithm_state=NewAlgState}};
 handle_call(dump, _From, #state{module=Module,algorithm_state=AlgState}=State) ->
     {reply, Module:dump(AlgState), State}.
 
