@@ -27,9 +27,9 @@
     {'noreply', NewState :: term()} |
     {'stop', NewState :: term()}.
 
--callback handle_message(Message :: term(), From :: uid(),
+-callback handle_message(Message :: term(), From :: i(),
                          Round :: round_id(), State :: term()) ->
-    {ok, NewState :: term()}.
+    {'continue'|'stop', NewState :: term()}.
 
 -callback dump(State :: term()) -> iolist().
 
