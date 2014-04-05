@@ -9,7 +9,7 @@
 -behavior(gen_server).
 -include("process.hrl").
 
--export([step/2, dump/1, message/4]).
+-export([step/2, prep/2, dump/1, message/4]).
 
 %% API
 -export([start_link/4]).
@@ -39,13 +39,18 @@
           round=0,
           i=-1,
           algorithm_state,
-          stop=false
+          stop=false,
+          messages=[] %% Messages from prep to send during step
          }).
 -type state() :: #state{}.
 
--spec step(Pid :: pid(), Round :: non_neg_integer()) -> 'continue'|'stop'.
+-spec prep(Pid :: pid(), Round :: non_neg_integer()) -> 'continue'|'stop'.
+prep(Pid, Round) ->
+    gen_server:call(Pid, {prep, {round, Round}}).
+
+-spec step(Pid :: pid(), Round :: non_neg_integer()) -> ok.
 step(Pid, Round) ->
-    gen_server:call(Pid, {step, {round, Round}}).
+    gen_server:cast(Pid, {step, {round, Round}}).
 
 -spec dump(Pid :: pid()) -> iolist().
 dump(Pid) ->
@@ -96,15 +101,14 @@ init([AlgorithmModule, Uid, {i, I_int}=I, Extra]) ->
                   From :: {pid(), Tag :: term()},
                   State :: state()) ->
                                   {reply, term(), state()}.
-handle_call({step, {round, _Round}}, _From, #state{stop=true}=State) ->
+handle_call({prep, {round, _Round}}, _From, #state{stop=true}=State) ->
     {reply, already_stopped, State};
-handle_call({step, {round, Round}}, _From,
+handle_call({prep, {round, Round}}, _From,
             #state{algorithm_state=AlgState, module=Module, round=Round}=State) ->
-    NewState = State#state{round=Round+1},
-    {ContinueOrStop, NewAlgState} = handle_step_response(
-                                      Module:step({round, Round+1}, AlgState),
-                                      NewState),
-    {reply, ContinueOrStop, NewState#state{algorithm_state=NewAlgState}};
+    {ContinueOrStop, NewState} = handle_prep_response(
+                                   Module:step({round, Round}, AlgState),
+                                   State),
+    {reply, ContinueOrStop, NewState};
 handle_call({msg, From, {round, Round}, Msg}, _From,
             #state{algorithm_state=AlgState, module=Module, round=Round}=State) ->
     {ok, NewAlgState} =
@@ -115,15 +119,23 @@ handle_call(dump, _From, #state{module=Module,algorithm_state=AlgState}=State) -
 
 
 
--spec handle_step_response({'messages',
+-spec handle_prep_response({'messages',
                             Messages :: list(message()),
                             AlgState :: term()} |
                            {'noreply', AlgState :: term()} |
                            {'stop', AlgState :: term()},
                            State :: state()) ->
                                   {'continue'|'stop', NewState :: state()}.
-handle_step_response({messages, Messages, AlgState},
-                     #state{round=Round, i=I}=State) ->
+handle_prep_response({messages, Messages, AlgState}, State) ->
+    {continue, State#state{algorithm_state=AlgState, messages=Messages}};
+handle_prep_response({noreply, AlgState}, State) ->
+    {continue, State#state{algorithm_state=AlgState}};
+handle_prep_response({stop, AlgState}, State) ->
+    {stop, State#state{algorithm_state=AlgState, stop=true}}.
+
+
+handle_cast({step, {round, Round}},
+            #state{round=Round, i=I, messages=Messages}=State) ->
     %% Describe the "From" for this message in the same terms as the
     %% "To". If the sender describes a relative position (left or
     %% right with a number of servers) then pass the source for the
@@ -139,15 +151,7 @@ handle_step_response({messages, Messages, AlgState},
                                       {round, Round+1}, Message)
                   end,
                   Messages),
-    {continue, State#state{algorithm_state=AlgState}};
-handle_step_response({noreply, AlgState}, #state{round=Round}=State) ->
-    {continue, State#state{algorithm_state=AlgState}};
-handle_step_response({stop, AlgState}, #state{round=Round}=State) ->
-    {stop, State#state{algorithm_state=AlgState, stop=true}}.
-
-
-handle_cast(_Msg, State) ->
-    {noreply, State}.
+    {noreply, State#state{messages=[],round=Round+1}}.
 
 handle_info(_Info, State) ->
     {noreply, State}.

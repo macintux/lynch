@@ -64,6 +64,7 @@ dump() ->
     gen_server:call(?SERVER, dump).
 
 crank() ->
+    gen_server:call(?SERVER, prep),
     gen_server:call(?SERVER, step).
 
 crank(verbose) ->
@@ -105,11 +106,11 @@ handle_call({run, Count, Module}, _From, #state{stop=true}) ->
     {reply, ok, #state{round=0,procs=run_procs(Count, Module, [])}};
 handle_call({run, _Count, _Module}, _From, State) ->
     {reply, already_running, State};
-handle_call(step, _From, #state{procs=[]}=State) ->
+handle_call(prep, _From, #state{procs=[]}=State) ->
     {reply, noprocs, State};
-handle_call(step, _From, #state{stop=true}=State) ->
+handle_call(prep, _From, #state{stop=true}=State) ->
     {reply, done, State};
-handle_call(step, _From, #state{round=Round,procs=Procs}=State) ->
+handle_call(prep, _From, #state{round=Round,procs=Procs}=State) ->
     %% If any of our processes indicate the algorithm is complete by
     %% returning stop, we need to also return stop.
     %%
@@ -117,16 +118,19 @@ handle_call(step, _From, #state{round=Round,procs=Procs}=State) ->
     {Reply, NewState} =
         case lists:foldl(fun(X, Sum) ->
                                  Sum +
-                                 case process:step(X, Round) of
+                                 case process:prep(X, Round) of
                                      continue -> 0;
                                      stop -> 1
                                  end
                          end,
                          0, Procs) of
-            0 -> {ok, State#state{round=Round+1}};
-            _ -> {stop, State#state{round=Round+1, stop=true}}
+            0 -> {ok, State#state{round=Round}};
+            _ -> {stop, State#state{round=Round, stop=true}}
         end,
     {reply, Reply, NewState};
+handle_call(step, _From, #state{round=Round,procs=Procs}=State) ->
+    lists:foreach(fun(X) -> process:step(X, Round) end, Procs),
+    {reply, ok, State#state{round=Round+1}};
 handle_call(dump, _From, #state{round=Round,procs=Procs}=State) ->
     Dump = [io_lib:format("Next round: ~B~n", [Round+1]) |
             lists:map(fun(X) -> process:dump(X) end, Procs)],
