@@ -2,7 +2,7 @@
 
 Fires up the supervision tree, including a runtime process.
 
-> runtime:run(1, lcr).
+> runtime:run(lcr, 1).
 
 * Shell invokes runtime:run/2
 *   Shell invokes gen_server:call/2
