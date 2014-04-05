@@ -10,7 +10,7 @@
 -include("process.hrl").
 
 -behavior(process).
--export([start/2, step/2, handle_message/4, dump/1]).
+-export([init/3, step/2, handle_message/4, dump/1]).
 
 -record(state, {
           i,
@@ -24,16 +24,14 @@
          }).
 -type state() :: #state{}.
 
--spec start(Uid :: uid(), I :: i()) -> no_return().
-start({uid, Uid}, {i, I}) ->
-    process:start(?MODULE,
-                  I,
-                  #state{
-                     i=I,
-                     u=Uid,
-                     'send+'={Uid, out, 1},
-                     'send-'={Uid, out, 1}
-                    }).
+-spec init(Uid :: uid(), I :: i(), Extra::list()) -> state().
+init({uid, Uid}, {i, I}, _Extra) ->
+    #state{
+       i=I,
+       u=Uid,
+       'send+'={Uid, out, 1},
+       'send-'={Uid, out, 1}
+      }.
 
 -spec step(Round :: round_id(), State :: state()) ->
                   {'messages', list(message()), NewState :: state()} |
@@ -57,47 +55,47 @@ step(_Round, #state{i=I, 'send+'=SendPlus,'send-'=SendMinus}=State) ->
 
 -spec handle_message(Message :: term(), From :: i(),
                      Round :: round_id(), State :: state()) ->
-    {ok, NewState :: term()}.
+    {'continue'|'stop', NewState :: term()}.
 handle_message({V, out, _H}, _From, _Round,
                #state{u=U}=State) when V < U ->
-    {ok, State}; %% Drop the message. This is not explicit in the book's detailed algorithm
+    {continue, State}; %% Drop the message. This is not explicit in the book's detailed algorithm
 handle_message({V, out, H}, {i, _From, left, 1}, _Round,
                #state{u=U,i=_I}=State) when V > U, H > 1 ->
-    {ok, State#state{'send+'={V, out, H-1}}};
+    {continue, State#state{'send+'={V, out, H-1}}};
 handle_message({V, out, H}, {i, _From, left, 1}, _Round,
                #state{u=U,i=_I}=State) when V > U, H =:= 1 ->
-    {ok, State#state{'send-'={V, in, 1}}};
+    {continue, State#state{'send-'={V, in, 1}}};
 handle_message({V, out, _H}, {i, _From, left, 1}, _Round,
                #state{u=U,i=I}=State) when V =:= U ->
     io:format("I'm the leader: ~B/~B~n", [I, U]),
     {stop, State#state{status=leader}};
 handle_message({V, out, H}, {i, _From, right, 1}, _Round,
                #state{u=U,i=_I}=State) when V > U, H > 1 ->
-    {ok, State#state{'send-'={V, out, H-1}}};
+    {continue, State#state{'send-'={V, out, H-1}}};
 handle_message({V, out, H}, {i, _From, right, 1}, _Round,
                #state{u=U,i=_I}=State) when V > U, H =:= 1 ->
-    {ok, State#state{'send+'={V, in, 1}}};
+    {continue, State#state{'send+'={V, in, 1}}};
 handle_message({V, out, _H}, {i, _From, right, 1}, _Round,
                #state{u=U,i=I}=State) when V =:= U ->
     io:format("I'm the leader: ~B/~B~n", [I, U]),
     {stop, State#state{status=leader}};
 handle_message({V, in, 1}, {i, _From, left, 1}, _Round,
                #state{u=U,i=_I}=State) when V =/= U ->
-    {ok, State#state{'send+'={V, in, 1}}};
+    {continue, State#state{'send+'={V, in, 1}}};
 handle_message({V, in, 1}, {i, _From, right, 1}, _Round,
                #state{u=U,i=_I}=State) when V =/= U ->
-    {ok, State#state{'send-'={V, in, 1}}};
+    {continue, State#state{'send-'={V, in, 1}}};
 handle_message({U, in, 1}, _I, _Round,
                #state{u=U,halfmatch=false}=State) ->
-    {ok, State#state{halfmatch=true}};
+    {continue, State#state{halfmatch=true}};
 handle_message({U, in, 1}, _I, _Round,
                #state{u=U,halfmatch=true,phase=Phase}=State) ->
     NewPhase = Phase + 1,
-    {ok, State#state{'send+'={U, out, trunc(math:pow(2, NewPhase))},
-                     'send-'={U, out, trunc(math:pow(2, NewPhase))},
-                     phase=NewPhase,
-                     halfmatch=false
-                    }}.
+    {continue, State#state{'send+'={U, out, trunc(math:pow(2, NewPhase))},
+                           'send-'={U, out, trunc(math:pow(2, NewPhase))},
+                           phase=NewPhase,
+                           halfmatch=false
+                          }}.
 
 
 -spec dump(State :: state()) -> iolist().
