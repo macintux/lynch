@@ -1,0 +1,32 @@
+> application:start(runtime).
+
+Fires up the supervision tree, including a runtime process.
+
+> runtime:run(1, lcr).
+
+* Shell invokes runtime:run/2
+*   Shell invokes gen_server:call/2
+*     Message is sent to registered 'runtime' process:
+      {run, 1, lcr}
+* runtime receives message
+* gen_server library(?) turns that into runtime:handle_call/3
+*   runtime creates new state value via handle_call and run_procs
+*     run_procs spawns and monitors instances of the module named in arg list
+        * New process starts at start/2
+        * process calls process:start/3
+        * process library invokes wait_for_crank/1 event loop with state
+*   gen_server library stashes new state in its event loop
+*   gen_server library sends message to Shell: ok
+
+> runtime:crank(verbose).
+
+* Shell invokes runtime:crank/1
+*   Shell invokes gen_server:call/2 (dump)
+  * runtime receives message...
+  *   runtime prints state
+*   Shell invokes gen_server:call/2 (step)
+  * runtime receives message
+  *   Each process receives {step, {round, 1}}
+    * 
+  *   runtime returns {reply, ok, State}
+
