@@ -10,7 +10,7 @@
 -include("process.hrl").
 
 -behavior(process).
--export([start/2, step/2, handle_message/4, dump/1]).
+-export([init/3, step/2, handle_message/4, dump/1]).
 
 -record(state, {
           i,
@@ -20,16 +20,14 @@
          }).
 -type state() :: #state{}.
 
--spec start(Uid :: uid(), I :: i()) -> no_return().
-start({uid, Uid}, {i, I}) ->
-    process:start(?MODULE,
-                  I,
-                  #state{
-                     i=I,
-                     u=Uid,
-                     send=Uid,
-                     status=unknown
-                    }).
+-spec init(Uid :: uid(), I :: i(), Extra::list()) -> state().
+init({uid, Uid}, {i, I}, _Extra) ->
+    #state{
+       i=I,
+       u=Uid,
+       send=Uid,
+       status=unknown
+      }.
 
 -spec step(Round :: round_id(), State :: state()) ->
                   {'messages', list(message()), NewState :: state()} |
@@ -44,14 +42,14 @@ step(_Round, #state{i=I,send=Send}=State) ->
 
 -spec handle_message(Message :: term(), From :: i(),
                      Round :: round_id(), State :: state()) ->
-    {ok, NewState :: term()}.
+    {'continue'|'stop', NewState :: term()}.
 handle_message(RcvId, _From, _Round, #state{u=Uid}=State) when RcvId < Uid ->
-    {ok, State#state{send=null}};
+    {continue, State#state{send=null}};
 handle_message(RcvId, _From, _Round, #state{u=Uid, i=I}=State) when RcvId == Uid ->
     io:format("I'm the leader: ~B/~B~n", [I, Uid]),
-    {ok, State#state{send=null,status=leader}};
+    {stop, State#state{send=null,status=leader}};
 handle_message(RcvId, _From, _Round, #state{u=Uid}=State) when RcvId > Uid ->
-    {ok, State#state{send=RcvId}}.
+    {continue, State#state{send=RcvId}}.
 
     
 -spec dump(State :: state()) -> iolist().

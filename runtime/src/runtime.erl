@@ -22,6 +22,7 @@
 
 -record(state, {
           round=0,
+          stop=false,
           procs=[]
          }).
 
@@ -62,25 +63,30 @@ init(_Args) ->
 dump() ->
     gen_server:call(?SERVER, dump).
 
+step_or_stop(ok) ->
+    gen_server:call(?SERVER, step);
+step_or_stop(Status) ->
+    io:format("Stopped: ~p~n", [Status]).
+
 crank() ->
-    gen_server:call(?SERVER, step).
+    step_or_stop(gen_server:call(?SERVER, prep)).
 
 crank(verbose) ->
-    gen_server:call(?SERVER, dump),
-    gen_server:call(?SERVER, step).
+    io:format("~ts~n", [dump()]),
+    crank().
 
 -spec msg(Dest :: loc(), From :: loc(),
           Round :: round_id(), Message :: term()) -> 'ok'.
 msg(Dest, From, Round, Message) ->
     gen_server:cast(?SERVER, {msg, Dest, From, Round, Message}).
 
-run(Count, Module) ->
+run(Module, Count) ->
     gen_server:call(?SERVER, {run, Count, Module}).
 
 run_procs(0, _Module, Procs) ->
     Procs;
 run_procs(Count, Module, Procs) ->
-    {Pid, _Ref} = spawn_monitor(Module, start, [{uid, randuid()}, {i, Count}]),
+    {ok, Pid} = process:start_link(Module, {uid, randuid()}, {i, Count}, []),
     run_procs(Count-1, Module, [Pid|Procs]).
 
 %%--------------------------------------------------------------------
@@ -99,17 +105,42 @@ run_procs(Count, Module, Procs) ->
 %%--------------------------------------------------------------------
 handle_call({run, Count, Module}, _From, #state{procs=[]}) ->
     {reply, ok, #state{round=0,procs=run_procs(Count, Module, [])}};
+handle_call({run, Count, Module}, _From, #state{stop=true}) ->
+    %% Start over
+    {reply, ok, #state{round=0,procs=run_procs(Count, Module, [])}};
 handle_call({run, _Count, _Module}, _From, State) ->
     {reply, already_running, State};
-handle_call(step, _From, #state{procs=[]}=State) ->
+handle_call(prep, _From, #state{procs=[]}=State) ->
     {reply, noprocs, State};
+handle_call(prep, _From, #state{stop=true}=State) ->
+    {reply, stop, State};
+handle_call(prep, _From, #state{round=Round,procs=Procs}=State) ->
+    %% If any of our processes indicate the algorithm is complete by
+    %% returning stop, we need to also return stop.
+    %%
+    %% Hate using cases at all, much less nested, probably refactor.
+    {Reply, NewState} =
+        case lists:foldl(fun(X, Sum) ->
+                                 Sum +
+                                 case process:prep(X, Round) of
+                                     continue -> 0;
+                                     stop -> 1
+                                 end
+                         end,
+                         0, Procs) of
+            0 -> {ok, State};
+            _ -> {stop, State#state{stop=true}}
+        end,
+    {reply, Reply, NewState};
 handle_call(step, _From, #state{round=Round,procs=Procs}=State) ->
-    lists:foreach(fun(X) -> X ! {step, {round, Round}} end, Procs),
+    lists:foreach(fun(X) -> process:step(X, Round) end, Procs),
     {reply, ok, State#state{round=Round+1}};
+handle_call(dump, _From, #state{stop=true}=State) ->
+    {reply, "Algorithm has reached a stopping point", State};
 handle_call(dump, _From, #state{round=Round,procs=Procs}=State) ->
-    io:format("Next round: ~B~n", [Round+1]),
-    lists:foreach(fun(X) -> X ! dump end, Procs),
-    {reply, ok, State}.
+    Dump = [io_lib:format("Round: ~B~n", [Round]) |
+            lists:map(fun(X) -> process:dump(X) end, Procs)],
+    {reply, Dump, State}.
 
 %%--------------------------------------------------------------------
 %% @private
@@ -122,14 +153,29 @@ handle_call(dump, _From, #state{round=Round,procs=Procs}=State) ->
 %% @end
 %%--------------------------------------------------------------------
 handle_cast({msg, all, From, Round, Message}, #state{procs=Procs}=State) ->
-    lists:foreach(fun(X) -> X ! {msg, From, Round, Message} end, Procs),
-    {noreply, State};
+    NewState =
+        case lists:foldl(fun(X, Sum) ->
+                                 Sum + 
+                                 case process:message(X, From, Round, Message) of
+                                     continue -> 0;
+                                     stop -> 1
+                                 end
+                         end,
+                         0, Procs) of
+            0 -> State;
+            _ -> State#state{stop=true}
+        end,
+    {noreply, NewState};
 handle_cast({msg, {i, I}, From, Round, Message}, #state{procs=Procs}=State) ->
-    lists:nth(map_i(I, length(Procs)), Procs) ! {msg, From, Round, Message},
-    {noreply, State};
+    case process:message(lists:nth(map_i(I, length(Procs)), Procs), From, Round, Message) of
+        continue -> {noreply, State};
+        stop -> {noreply, State#state{stop=true}}
+    end;
 handle_cast({msg, {i, I, _Dir, _Rel}, From, Round, Message}, #state{procs=Procs}=State) ->
-    lists:nth(map_i(I, length(Procs)), Procs) ! {msg, From, Round, Message},
-    {noreply, State};
+    case process:message(lists:nth(map_i(I, length(Procs)), Procs), From, Round, Message) of
+        continue -> {noreply, State};
+        stop -> {noreply, State#state{stop=true}}
+    end;
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
