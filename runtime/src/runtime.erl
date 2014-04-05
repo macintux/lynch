@@ -138,7 +138,7 @@ handle_call(step, _From, #state{round=Round,procs=Procs}=State) ->
 handle_call(dump, _From, #state{stop=true}=State) ->
     {reply, "Algorithm has reached a stopping point", State};
 handle_call(dump, _From, #state{round=Round,procs=Procs}=State) ->
-    Dump = [io_lib:format("Next round: ~B~n", [Round+1]) |
+    Dump = [io_lib:format("Round: ~B~n", [Round]) |
             lists:map(fun(X) -> process:dump(X) end, Procs)],
     {reply, Dump, State}.
 
