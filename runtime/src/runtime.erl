@@ -12,11 +12,13 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, run/2, msg/4, crank/0, crank/1, dump/0]).
+-export([start_link/0, run/2, msg/4,
+         crank/0, crank/1, autocrank/0,
+         dump/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
-         terminate/2, code_change/3]).
+         terminate/2, code_change/3, info/0]).
 
 -define(SERVER, ?MODULE).
 
@@ -64,10 +66,22 @@ dump() ->
     gen_server:call(?SERVER, dump).
 
 step_or_stop(ok) ->
-    gen_server:call(?SERVER, step);
+    gen_server:call(?SERVER, step),
+    continue;
 step_or_stop(Status) ->
-    io:format("Stopped: ~p~n", [Status]).
+    io:format("Stopped: ~p~n", [Status]),
+    stop.
 
+autocrank() ->
+    run_autocrank(step_or_stop(gen_server:call(?SERVER, prep))),
+    info().
+
+run_autocrank(continue) ->
+    io:format("~ts~n", [dump()]),
+    run_autocrank(step_or_stop(gen_server:call(?SERVER, prep)));
+run_autocrank(stop) ->
+    stop.
+    
 crank() ->
     step_or_stop(gen_server:call(?SERVER, prep)).
 
@@ -78,7 +92,7 @@ crank(verbose) ->
 -spec msg(Dest :: loc(), From :: loc(),
           Round :: round_id(), Message :: term()) -> 'ok'.
 msg(Dest, From, Round, Message) ->
-    gen_server:cast(?SERVER, {msg, Dest, From, Round, Message}).
+    gen_server:call(?SERVER, {msg, Dest, From, Round, Message}).
 
 run(Module, Count) ->
     gen_server:call(?SERVER, {run, Count, Module}).
@@ -88,6 +102,9 @@ run_procs(0, _Module, Procs) ->
 run_procs(Count, Module, Procs) ->
     {ok, Pid} = process:start_link(Module, {uid, randuid()}, {i, Count}, []),
     run_procs(Count-1, Module, [Pid|Procs]).
+
+info() ->
+    gen_server:call(?SERVER, info).
 
 %%--------------------------------------------------------------------
 %% @private
@@ -133,26 +150,26 @@ handle_call(prep, _From, #state{round=Round,procs=Procs}=State) ->
         end,
     {reply, Reply, NewState};
 handle_call(step, _From, #state{round=Round,procs=Procs}=State) ->
-    lists:foreach(fun(X) -> process:step(X, Round) end, Procs),
-    {reply, ok, State#state{round=Round+1}};
+    NewState =
+        lists:foldl(fun(X, NS) -> deliver_messages(process:step(X, Round), NS) end,
+                    State, Procs),
+    {reply, ok, NewState#state{round=Round+1}};
 handle_call(dump, _From, #state{stop=true}=State) ->
     {reply, "Algorithm has reached a stopping point", State};
 handle_call(dump, _From, #state{round=Round,procs=Procs}=State) ->
     Dump = [io_lib:format("Round: ~B~n", [Round]) |
             lists:map(fun(X) -> process:dump(X) end, Procs)],
-    {reply, Dump, State}.
+    {reply, Dump, State};
+handle_call(info, _From, #state{round=Round, procs=Procs, stop=Halted}=State) ->
+    {reply, {Round, length(Procs), Halted}, State}.
 
-%%--------------------------------------------------------------------
-%% @private
-%% @doc
-%% Handling cast messages
-%%
-%% @spec handle_cast(Msg, State) -> {noreply, State} |
-%%                                  {noreply, State, Timeout} |
-%%                                  {stop, Reason, State}
-%% @end
-%%--------------------------------------------------------------------
-handle_cast({msg, all, From, Round, Message}, #state{procs=Procs}=State) ->
+deliver_messages([], State) ->
+    State;
+deliver_messages([H|T], State) ->
+    deliver_messages(T, deliver_message(H, State)).
+
+%% Update state to stop=true if a stop response comes back from any process
+deliver_message({all, From, Round, Message}, #state{procs=Procs}=State) ->
     NewState =
         case lists:foldl(fun(X, Sum) ->
                                  Sum + 
@@ -165,17 +182,30 @@ handle_cast({msg, all, From, Round, Message}, #state{procs=Procs}=State) ->
             0 -> State;
             _ -> State#state{stop=true}
         end,
-    {noreply, NewState};
-handle_cast({msg, {i, I}, From, Round, Message}, #state{procs=Procs}=State) ->
+    NewState;
+deliver_message({{i, I}, From, Round, Message}, #state{procs=Procs}=State) ->
     case process:message(lists:nth(map_i(I, length(Procs)), Procs), From, Round, Message) of
-        continue -> {noreply, State};
-        stop -> {noreply, State#state{stop=true}}
+        continue -> State;
+        stop -> State#state{stop=true}
     end;
-handle_cast({msg, {i, I, _Dir, _Rel}, From, Round, Message}, #state{procs=Procs}=State) ->
+deliver_message({{i, I, _Dir, _Rel}, From, Round, Message}, #state{procs=Procs}=State) ->
     case process:message(lists:nth(map_i(I, length(Procs)), Procs), From, Round, Message) of
-        continue -> {noreply, State};
-        stop -> {noreply, State#state{stop=true}}
-    end;
+        continue -> State;
+        stop -> State#state{stop=true}
+    end.
+
+
+
+%%--------------------------------------------------------------------
+%% @private
+%% @doc
+%% Handling cast messages
+%%
+%% @spec handle_cast(Msg, State) -> {noreply, State} |
+%%                                  {noreply, State, Timeout} |
+%%                                  {stop, Reason, State}
+%% @end
+%%--------------------------------------------------------------------
 handle_cast(_Msg, State) ->
     {noreply, State}.
 

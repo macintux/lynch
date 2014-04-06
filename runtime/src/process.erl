@@ -36,7 +36,7 @@
 
 -record(state, {
           module,
-          round=0,
+          round=-1,
           i=-1,
           algorithm_state,
           stop=false,
@@ -48,9 +48,9 @@
 prep(Pid, Round) ->
     gen_server:call(Pid, {prep, {round, Round}}).
 
--spec step(Pid :: pid(), Round :: non_neg_integer()) -> ok.
+-spec step(Pid :: pid(), Round :: non_neg_integer()) -> list(tuple()).
 step(Pid, Round) ->
-    gen_server:cast(Pid, {step, {round, Round}}).
+    gen_server:call(Pid, {step, {round, Round}}).
 
 -spec dump(Pid :: pid()) -> iolist().
 dump(Pid) ->
@@ -104,10 +104,11 @@ init([AlgorithmModule, Uid, {i, I_int}=I, Extra]) ->
 handle_call({prep, {round, _Round}}, _From, #state{stop=true}=State) ->
     {reply, already_stopped, State};
 handle_call({prep, {round, Round}}, _From,
-            #state{algorithm_state=AlgState, module=Module, round=Round}=State) ->
+            #state{algorithm_state=AlgState, module=Module, round=LastRound}=State) when Round - LastRound =:= 1 ->
+    UpdatedRoundState = State#state{round=Round},
     {ContinueOrStop, NewState} = handle_prep_response(
                                    Module:step({round, Round}, AlgState),
-                                   State),
+                                   UpdatedRoundState),
     {reply, ContinueOrStop, NewState};
 handle_call({msg, From, {round, Round}, Msg}, _From,
             #state{algorithm_state=AlgState, module=Module, round=Round}=State) ->
@@ -115,9 +116,25 @@ handle_call({msg, From, {round, Round}, Msg}, _From,
         Module:handle_message(Msg, From, {round, Round}, AlgState),
     {reply, ContinueOrStop, State#state{algorithm_state=NewAlgState}};
 handle_call(dump, _From, #state{module=Module,algorithm_state=AlgState}=State) ->
-    {reply, Module:dump(AlgState), State}.
-
-
+    {reply, Module:dump(AlgState), State};
+handle_call({step, {round, Round}}, _From,
+            #state{round=Round, i=I, messages=Messages}=State) ->
+    %% Describe the "From" for this message in the same terms as the
+    %% "To". If the sender describes a relative position (left or
+    %% right with a number of servers) then pass the source for the
+    %% message the same way.
+    MsgTuples = lists:map(fun({{i, _D}=Dest, Message}) ->
+                                  {Dest, {i, I},
+                                   {round, Round}, Message};
+                             ({{i, _D, left, Rel}=Dest, Message}) ->
+                                  {Dest, {i, I, right, Rel},
+                                   {round, Round}, Message};
+                             ({{i, _D, right, Rel}=Dest, Message}) ->
+                                  {Dest, {i, I, left, Rel},
+                                   {round, Round}, Message}
+                          end,
+                          Messages),
+    {reply, MsgTuples, State#state{messages=[],round=Round}}.
 
 -spec handle_prep_response({'messages',
                             Messages :: list(message()),
@@ -134,25 +151,6 @@ handle_prep_response({stop, AlgState}, State) ->
     {stop, State#state{algorithm_state=AlgState, stop=true}}.
 
 
-handle_cast({step, {round, Round}},
-            #state{round=Round, i=I, messages=Messages}=State) ->
-    %% Describe the "From" for this message in the same terms as the
-    %% "To". If the sender describes a relative position (left or
-    %% right with a number of servers) then pass the source for the
-    %% message the same way.
-    lists:foreach(fun({{i, _D}=Dest, Message}) ->
-                          runtime:msg(Dest, {i, I},
-                                      {round, Round+1}, Message);
-                     ({{i, _D, left, Rel}=Dest, Message}) ->
-                          runtime:msg(Dest, {i, I, right, Rel},
-                                      {round, Round+1}, Message);
-                     ({{i, _D, right, Rel}=Dest, Message}) ->
-                          runtime:msg(Dest, {i, I, left, Rel},
-                                      {round, Round+1}, Message)
-                  end,
-                  Messages),
-    {noreply, State#state{messages=[],round=Round+1}}.
-
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -162,3 +160,15 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
+%%--------------------------------------------------------------------
+%% @private
+%% @doc
+%% Handling cast messages
+%%
+%% @spec handle_cast(Msg, State) -> {noreply, State} |
+%%                                  {noreply, State, Timeout} |
+%%                                  {stop, Reason, State}
+%% @end
+%%--------------------------------------------------------------------
+handle_cast(_Msg, State) ->
+    {noreply, State}.
