@@ -47,5 +47,8 @@ the crank" on the processes, moving the round (as defined in Lynch's
 synchronous algorithms) forward each time. `crank(verbose)` will print
 a status dump before executing the round.
 
+`runtime:autocrank()` can be used instead of repeatedly turning the
+crank.
+
 The `process` module defines a `process` behavior for the algorithm to
 leverage.
