@@ -35,10 +35,10 @@ init({uid, Uid}, {i, I}, _Extra) ->
 
 -spec step(Round :: round_id(), State :: state()) ->
                   {'messages', list(message()), NewState :: state()} |
-                  {'noreply', NewState :: state()} |
-                  {'stop', NewState :: term()}.
+                  {'continue', NewState :: state()} |
+                  {'stop', NewState :: state()}.
 step(_Round, #state{'send+'=null,'send-'=null}=State) ->
-    {noreply, State#state{halfmatch=false}};
+    {continue, State#state{halfmatch=false}};
 step(_Round, #state{i=I, 'send+'=SendPlus,'send-'=null}=State) ->
     {messages, [
                 {{i, I+1, right, 1}, SendPlus}
@@ -55,7 +55,8 @@ step(_Round, #state{i=I, 'send+'=SendPlus,'send-'=SendMinus}=State) ->
 
 -spec handle_message(Message :: term(), From :: i(),
                      Round :: round_id(), State :: state()) ->
-    {'continue'|'stop', NewState :: term()}.
+                            {'continue', NewState :: state()} |
+                            {'stop', NewState :: state()}.
 handle_message({V, out, _H}, _From, _Round,
                #state{u=U}=State) when V < U ->
     {continue, State}; %% Drop the message. This is not explicit in the book's detailed algorithm

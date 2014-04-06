@@ -24,12 +24,13 @@
 
 -callback step(Round :: round_id(), State :: term()) ->
     {'messages', list(message()), NewState :: term()} |
-    {'noreply', NewState :: term()} |
+    {'continue', NewState :: term()} |
     {'stop', NewState :: term()}.
 
 -callback handle_message(Message :: term(), From :: i(),
                          Round :: round_id(), State :: term()) ->
-    {'continue'|'stop', NewState :: term()}.
+    {'continue', NewState :: term()} |
+    {'stop', NewState :: term()}.
 
 -callback dump(State :: term()) -> iolist().
 
