@@ -104,11 +104,11 @@ init([AlgorithmModule, Uid, {i, I_int}=I, Extra]) ->
 handle_call({prep, {round, _Round}}, _From, #state{stop=true}=State) ->
     {reply, already_stopped, State};
 handle_call({prep, {round, Round}}, _From,
-            #state{algorithm_state=AlgState, module=Module, round=LastRound}=State) when Round - LastRound =:= 1 ->
-    UpdatedRoundState = State#state{round=Round},
+            #state{algorithm_state=AlgState, module=Module, round=LastRound}=State)
+  when Round - LastRound =:= 1 ->
     {ContinueOrStop, NewState} = handle_prep_response(
                                    Module:step({round, Round}, AlgState),
-                                   UpdatedRoundState),
+                                   State#state{round=Round}),
     {reply, ContinueOrStop, NewState};
 handle_call({msg, From, {round, Round}, Msg}, _From,
             #state{algorithm_state=AlgState, module=Module, round=Round}=State) ->
