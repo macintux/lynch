@@ -65,25 +65,25 @@ init(_Args) ->
 dump() ->
     gen_server:call(?SERVER, dump).
 
-step_or_stop(ok) ->
-    gen_server:call(?SERVER, step),
+messages_or_stop(ok) ->
+    gen_server:call(?SERVER, messages),
     continue;
-step_or_stop(Status) ->
+messages_or_stop(Status) ->
     io:format("Stopped: ~p~n", [Status]),
     stop.
 
 autocrank() ->
-    run_autocrank(step_or_stop(gen_server:call(?SERVER, prep))),
+    run_autocrank(messages_or_stop(gen_server:call(?SERVER, start_round))),
     info().
 
 run_autocrank(continue) ->
     io:format("~ts~n", [dump()]),
-    run_autocrank(step_or_stop(gen_server:call(?SERVER, prep)));
+    run_autocrank(messages_or_stop(gen_server:call(?SERVER, start_round)));
 run_autocrank(stop) ->
     stop.
     
 crank() ->
-    step_or_stop(gen_server:call(?SERVER, prep)).
+    messages_or_stop(gen_server:call(?SERVER, start_round)).
 
 crank(verbose) ->
     io:format("~ts~n", [dump()]),
@@ -127,11 +127,11 @@ handle_call({run, Count, Module}, _From, #state{stop=true}) ->
     {reply, ok, #state{round=0,procs=run_procs(Count, Module, [])}};
 handle_call({run, _Count, _Module}, _From, State) ->
     {reply, already_running, State};
-handle_call(prep, _From, #state{procs=[]}=State) ->
+handle_call(start_round, _From, #state{procs=[]}=State) ->
     {reply, noprocs, State};
-handle_call(prep, _From, #state{stop=true}=State) ->
+handle_call(start_round, _From, #state{stop=true}=State) ->
     {reply, stop, State};
-handle_call(prep, _From, #state{round=Round,procs=Procs}=State) ->
+handle_call(start_round, _From, #state{round=Round,procs=Procs}=State) ->
     %% If any of our processes indicate the algorithm is complete by
     %% returning stop, we need to also return stop.
     %%
@@ -139,7 +139,7 @@ handle_call(prep, _From, #state{round=Round,procs=Procs}=State) ->
     {Reply, NewState} =
         case lists:foldl(fun(X, Sum) ->
                                  Sum +
-                                 case process:prep(X, Round) of
+                                 case process:start_round(X, Round) of
                                      continue -> 0;
                                      stop -> 1
                                  end
@@ -149,9 +149,11 @@ handle_call(prep, _From, #state{round=Round,procs=Procs}=State) ->
             _ -> {stop, State#state{stop=true}}
         end,
     {reply, Reply, NewState};
-handle_call(step, _From, #state{round=Round,procs=Procs}=State) ->
+handle_call(messages, _From, #state{round=Round,procs=Procs}=State) ->
     NewState =
-        lists:foldl(fun(X, NS) -> deliver_messages(process:step(X, Round), NS) end,
+        lists:foldl(fun(X, NS) -> deliver_messages(
+                                    process:retrieve_messages(X, Round), NS)
+                    end,
                     State, Procs),
     {reply, ok, NewState#state{round=Round+1}};
 handle_call(dump, _From, #state{stop=true}=State) ->

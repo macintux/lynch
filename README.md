@@ -8,7 +8,7 @@ in Erlang.
 
 The `runtime` library defines a framework for testing algorithms. It
 is in its very early stages, and currently only supports synchronous
-ring topologies (and is largely untested even for that).
+ring topologies.
 
 
     1> application:start(runtime).
@@ -52,3 +52,14 @@ crank.
 
 The `process` module defines a `process` behavior for the algorithm to
 leverage.
+
+### Application flow
+1. When `application:start(runtime)` is invoked a supervisor and
+  runtime process will launch.
+2. `runtime:run(Algorithm, <n>)` will spawn `n` processes with the specified algorithm module.
+3. `runtime:crank/{0,1}` or `runtime:autocrank/0` will start the synchronous network spinning.
+4. `runtime` will call `process:start_round/2` for each algorithm process at each turn of the crank.
+5. Each algorithm process will call `Algorithm:step/2`, which will return `stop`, `continue`, or `messages`; in the last case, a list of messages with routing information will be stored in the process state for later retrieval and delivery
+6. If any process returns `stop` via `start_round`, the runtime will end the algorithm.
+7. If the algorithm is not yet complete, `runtime` will call `process:retrieve_messages` for each algorithm process for a list of messages to deliver.
+8. Between `retrieve_messages` calls each batch of returned messages is sent via `process:message` and `Algorithm:handle_message` to the appropriate destination; if any of those messages results in a `stop` response, the runtime will end the algorithm after that batch has been fully delivered.
