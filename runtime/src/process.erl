@@ -9,7 +9,7 @@
 -behavior(gen_server).
 -include("process.hrl").
 
--export([step/2, prep/2, dump/1, message/4]).
+-export([start_round/2, retrieve_messages/2, dump/1, message/4]).
 
 %% API
 -export([start_link/4]).
@@ -45,13 +45,13 @@
          }).
 -type state() :: #state{}.
 
--spec prep(Pid :: pid(), Round :: non_neg_integer()) -> 'continue'|'stop'.
-prep(Pid, Round) ->
-    gen_server:call(Pid, {prep, {round, Round}}).
+-spec start_round(Pid :: pid(), Round :: non_neg_integer()) -> 'continue'|'stop'.
+start_round(Pid, Round) ->
+    gen_server:call(Pid, {start_round, {round, Round}}).
 
--spec step(Pid :: pid(), Round :: non_neg_integer()) -> list(tuple()).
-step(Pid, Round) ->
-    gen_server:call(Pid, {step, {round, Round}}).
+-spec retrieve_messages(Pid :: pid(), Round :: non_neg_integer()) -> list(tuple()).
+retrieve_messages(Pid, Round) ->
+    gen_server:call(Pid, {retrieve_messages, {round, Round}}).
 
 -spec dump(Pid :: pid()) -> iolist().
 dump(Pid) ->
@@ -102,12 +102,12 @@ init([AlgorithmModule, Uid, {i, I_int}=I, Extra]) ->
                   From :: {pid(), Tag :: term()},
                   State :: state()) ->
                                   {reply, term(), state()}.
-handle_call({prep, {round, _Round}}, _From, #state{stop=true}=State) ->
+handle_call({start_round, {round, _Round}}, _From, #state{stop=true}=State) ->
     {reply, already_stopped, State};
-handle_call({prep, {round, Round}}, _From,
+handle_call({start_round, {round, Round}}, _From,
             #state{algorithm_state=AlgState, module=Module, round=LastRound}=State)
   when Round - LastRound =:= 1 ->
-    {ContinueOrStop, NewState} = handle_prep_response(
+    {ContinueOrStop, NewState} = handle_step_response(
                                    Module:step({round, Round}, AlgState),
                                    State#state{round=Round}),
     {reply, ContinueOrStop, NewState};
@@ -118,7 +118,7 @@ handle_call({msg, From, {round, Round}, Msg}, _From,
     {reply, ContinueOrStop, State#state{algorithm_state=NewAlgState}};
 handle_call(dump, _From, #state{module=Module,algorithm_state=AlgState}=State) ->
     {reply, Module:dump(AlgState), State};
-handle_call({step, {round, Round}}, _From,
+handle_call({retrieve_messages, {round, Round}}, _From,
             #state{round=Round, i=I, messages=Messages}=State) ->
     %% Describe the "From" for this message in the same terms as the
     %% "To". If the sender describes a relative position (left or
@@ -137,18 +137,18 @@ handle_call({step, {round, Round}}, _From,
                           Messages),
     {reply, MsgTuples, State#state{messages=[],round=Round}}.
 
--spec handle_prep_response({'messages',
+-spec handle_step_response({'messages',
                             Messages :: list(message()),
                             AlgState :: term()} |
-                           {'noreply', AlgState :: term()} |
+                           {'continue', AlgState :: term()} |
                            {'stop', AlgState :: term()},
                            State :: state()) ->
                                   {'continue'|'stop', NewState :: state()}.
-handle_prep_response({messages, Messages, AlgState}, State) ->
+handle_step_response({messages, Messages, AlgState}, State) ->
     {continue, State#state{algorithm_state=AlgState, messages=Messages}};
-handle_prep_response({noreply, AlgState}, State) ->
+handle_step_response({continue, AlgState}, State) ->
     {continue, State#state{algorithm_state=AlgState}};
-handle_prep_response({stop, AlgState}, State) ->
+handle_step_response({stop, AlgState}, State) ->
     {stop, State#state{algorithm_state=AlgState, stop=true}}.
 
 
