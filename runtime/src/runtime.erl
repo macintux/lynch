@@ -73,6 +73,7 @@ messages_or_stop(Status) ->
     stop.
 
 autocrank() ->
+    io:format("~ts~n", [dump()]),
     run_autocrank(messages_or_stop(gen_server:call(?SERVER, start_round))),
     info().
 
@@ -81,7 +82,7 @@ run_autocrank(continue) ->
     run_autocrank(messages_or_stop(gen_server:call(?SERVER, start_round)));
 run_autocrank(stop) ->
     stop.
-    
+
 crank() ->
     messages_or_stop(gen_server:call(?SERVER, start_round)).
 
@@ -174,7 +175,7 @@ deliver_messages([H|T], State) ->
 deliver_message({all, From, Round, Message}, #state{procs=Procs}=State) ->
     NewState =
         case lists:foldl(fun(X, Sum) ->
-                                 Sum + 
+                                 Sum +
                                  case process:message(X, From, Round, Message) of
                                      continue -> 0;
                                      stop -> 1

@@ -13,10 +13,10 @@
 -export([init/3, step/2, handle_message/4, dump/1]).
 
 -record(state, {
-          i,
-          u,
-          send,
-          status=unknown
+          i,               %% Position in the ring
+          u,               %% Unique ID
+          send,            %% UID to communicate next round (or null)
+          status=unknown   %% unknown or leader
          }).
 -type state() :: #state{}.
 
@@ -52,7 +52,7 @@ handle_message(RcvId, _From, _Round, #state{u=Uid, i=I}=State) when RcvId == Uid
 handle_message(RcvId, _From, _Round, #state{u=Uid}=State) when RcvId > Uid ->
     {continue, State#state{send=RcvId}}.
 
-    
+
 -spec dump(State :: state()) -> iolist().
 dump(#state{i=I, u=Uid, send=Send, status=Status}) ->
     io_lib:format("Proc #~B (~B) will send ~p (status ~p)~n",
