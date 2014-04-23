@@ -38,7 +38,7 @@ step(_Round, #state{status=leader}=State) ->
 step(_Round, #state{send=null}=State) ->
     {continue, State};
 step(_Round, #state{i=I,send=Send}=State) ->
-    {messages, [{{i, I+1}, Send}], State}.
+    {messages, [{{i, I+1}, Send}], State#state{send=null}}.
 
 -spec handle_message(Message :: term(), From :: i(),
                      Round :: round_id(), State :: state()) ->
