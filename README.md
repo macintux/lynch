@@ -63,3 +63,15 @@ leverage.
 6. If any process returns `stop` via `start_round`, the runtime will end the algorithm.
 7. If the algorithm is not yet complete, `runtime` will call `process:retrieve_messages` for each algorithm process for a list of messages to deliver.
 8. Between `retrieve_messages` calls each batch of returned messages is sent via `process:message` and `Algorithm:handle_message` to the appropriate destination; if any of those messages results in a `stop` response, the runtime will end the algorithm after that batch has been fully delivered.
+
+### Complexity analysis
+
+`runtime:info/0` will return the runtime state, which includes
+
+* Number of rounds executed so far
+* Number of messages sent
+* Number of processes
+* Whether the running algorithm (if any) has reached a point of
+  completion
+
+`info/0` is invoked as the last act of `autocrank/0`.

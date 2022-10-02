@@ -25,6 +25,7 @@
 -record(state, {
           round=0,
           stop=false,
+          msg_tally=0,
           procs=[]
          }).
 
@@ -161,13 +162,13 @@ handle_call(dump, _From, #state{round=Round,procs=Procs}=State) ->
     Dump = [io_lib:format("Round: ~B~n", [Round]) |
             lists:map(fun(X) -> process:dump(X) end, Procs)],
     {reply, Dump, State};
-handle_call(info, _From, #state{round=Round, procs=Procs, stop=Halted}=State) ->
-    {reply, {Round, length(Procs), Halted}, State}.
+handle_call(info, _From, State) ->
+    {reply, State, State}.
 
 deliver_messages([], State) ->
     State;
-deliver_messages([H|T], State) ->
-    deliver_messages(T, deliver_message(H, State)).
+deliver_messages([H|T], #state{msg_tally=N}=State) ->
+    deliver_messages(T, deliver_message(H, State#state{msg_tally=N+1})).
 
 %% Update state to stop=true if a stop response comes back from any process
 deliver_message({all, From, Round, Message}, #state{procs=Procs}=State) ->
