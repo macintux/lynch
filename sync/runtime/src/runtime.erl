@@ -58,8 +58,6 @@ start_link() ->
 %% @end
 %%--------------------------------------------------------------------
 init(_Args) ->
-    {A, B, C} = now(),
-    random:seed(A, B, C),
     {ok, #state{}}.
 
 dump() ->
@@ -288,4 +286,4 @@ check_for_zero(N, _Size) ->
 %% are remarkably low.
 -spec randuid() -> pos_integer().
 randuid() ->
-    random:uniform(500000000).
+    rand:uniform(500000000).
