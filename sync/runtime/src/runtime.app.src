@@ -1,6 +1,6 @@
 {application, runtime,
  [
-  {description, ""},
+  {description, "Synchronous ring for Lynch algorithms"},
   {vsn, "1"},
   {registered, [runtime]},
   {applications, [
