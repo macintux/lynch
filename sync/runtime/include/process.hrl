@@ -16,6 +16,6 @@
 -type uid() :: {uid, non_neg_integer()}.
 
 -type loc() :: i() | 'all'.
--type message() :: tuple(loc(), term()).
+-type message() :: {loc(), term()}.
 
 -type round_id() :: {round, non_neg_integer()}.
