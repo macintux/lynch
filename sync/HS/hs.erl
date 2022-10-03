@@ -10,7 +10,7 @@
 -include("process.hrl").
 
 -behavior(process).
--export([init/3, step/2, handle_message/4, dump/1]).
+-export([init/3, step/2, handle_message/4, dump/1, complexity/2]).
 
 -record(state, {
           i,
@@ -23,6 +23,12 @@
                           %% matches on two messages
          }).
 -type state() :: #state{}.
+
+-spec complexity(atom(), pos_integer()) -> pos_integer().
+complexity(time, N) ->
+    5 * N;
+complexity(msgs, N) ->
+    8 * N * ceil(math:log(N)).
 
 -spec init(Uid :: uid(), I :: i(), Extra::list()) -> state().
 init({uid, Uid}, {i, I}, _Extra) ->

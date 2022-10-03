@@ -48,7 +48,8 @@ synchronous algorithms) forward each time. `crank(verbose)` will print
 a status dump before executing the round.
 
 `runtime:autocrank()` can be used instead of repeatedly turning the
-crank.
+crank. It will optionally take a boolean verbose argument to mirror
+`crank/{0,1}`.
 
 The `process` module defines a `process` behavior for the algorithm to
 leverage.
@@ -64,7 +65,7 @@ leverage.
 7. If the algorithm is not yet complete, `runtime` will call `process:retrieve_messages` for each algorithm process for a list of messages to deliver.
 8. Between `retrieve_messages` calls each batch of returned messages is sent via `process:message` and `Algorithm:handle_message` to the appropriate destination; if any of those messages results in a `stop` response, the runtime will end the algorithm after that batch has been fully delivered.
 
-### Complexity analysis
+### Results
 
 `runtime:info/0` will return the runtime state, which includes
 
@@ -74,4 +75,33 @@ leverage.
 * Whether the running algorithm (if any) has reached a point of
   completion
 
-`info/0` is invoked as the last act of `autocrank/0`.
+`info/0` is invoked as the last act of `autocrank/{0,1}`.
+
+### Complexity analysis
+
+Algorithm modules can optionally define `complexity/2` to return time
+and communications complexity estimates.
+
+For example, the LCR algorithm defines it as such:
+
+```erlang
+complexity(time, N) ->
+    2 * N;
+complexity(msgs, N) ->
+    N*N.
+```
+
+If the module defines these, `runtime:complexity()` can be invoked
+after a run. In the example below, LCR estimated 2000 rounds, with
+only 1000 executed, and 1,000,000 messages, with only 7238 sent. One
+might question either my LCR implementation or Lynch's complexity
+analysis.
+
+```
+9> runtime:complexity().
+"Time: 2000 > 1000 / Msgs: 1000000 > 7238"
+```
+
+This is still quite raw; currently `runtime:complexity/0` will crash
+if the algorithm module doesn't define `complexity/2`, or if the
+algorithm hasn't been executed yet.

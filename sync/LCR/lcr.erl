@@ -10,7 +10,7 @@
 -include("process.hrl").
 
 -behavior(process).
--export([init/3, step/2, handle_message/4, dump/1]).
+-export([init/3, step/2, handle_message/4, dump/1, complexity/2]).
 
 -record(state, {
           i,               %% Position in the ring
@@ -19,6 +19,12 @@
           status=unknown   %% unknown or leader
          }).
 -type state() :: #state{}.
+
+-spec complexity(atom(), pos_integer()) -> pos_integer().
+complexity(time, N) ->
+    2 * N;
+complexity(msgs, N) ->
+    N*N.
 
 -spec init(Uid :: uid(), I :: i(), Extra::list()) -> state().
 init({uid, Uid}, {i, I}, _Extra) ->

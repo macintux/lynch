@@ -14,7 +14,7 @@
 %% API
 -export([start_link/0, run/2, msg/4,
          crank/0, crank/1, autocrank/0,
-         dump/0]).
+         autocrank/1, dump/0, complexity/0]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -23,6 +23,7 @@
 -define(SERVER, ?MODULE).
 
 -record(state, {
+          alg=undefined,
           round=0,
           stop=false,
           msg_tally=0,
@@ -61,6 +62,9 @@ start_link() ->
 init(_Args) ->
     {ok, #state{}}.
 
+complexity() ->
+    gen_server:call(?SERVER, complexity).
+
 dump() ->
     gen_server:call(?SERVER, dump).
 
@@ -71,15 +75,23 @@ messages_or_stop(Status) ->
     io:format("Stopped: ~p~n", [Status]),
     stop.
 
+survey_state(true) ->
+    io:format("~ts~n", [dump()]);
+survey_state(false) ->
+    ok.
+
 autocrank() ->
-    io:format("~ts~n", [dump()]),
-    run_autocrank(messages_or_stop(gen_server:call(?SERVER, start_round))),
+    autocrank(false).
+
+autocrank(Verbose) ->
+    survey_state(Verbose),
+    run_autocrank(messages_or_stop(gen_server:call(?SERVER, start_round)), Verbose),
     info().
 
-run_autocrank(continue) ->
-    io:format("~ts~n", [dump()]),
-    run_autocrank(messages_or_stop(gen_server:call(?SERVER, start_round)));
-run_autocrank(stop) ->
+run_autocrank(continue, Verbose) ->
+    survey_state(Verbose),
+    run_autocrank(messages_or_stop(gen_server:call(?SERVER, start_round)), Verbose);
+run_autocrank(stop, _Verbose) ->
     stop.
 
 crank() ->
@@ -106,6 +118,12 @@ run_procs(Count, Module, Procs) ->
 info() ->
     gen_server:call(?SERVER, info).
 
+complexity_compare({EstTime, RealTime}, {EstMsgs, RealMsgs}) ->
+    lists:flatten(
+      io_lib:format(
+        "Time: ~B > ~B / Msgs: ~B > ~B", [EstTime, RealTime,
+                                          EstMsgs, RealMsgs])).
+
 %%--------------------------------------------------------------------
 %% @private
 %% @doc
@@ -121,10 +139,10 @@ info() ->
 %% @end
 %%--------------------------------------------------------------------
 handle_call({run, Count, Module}, _From, #state{procs=[]}) ->
-    {reply, ok, #state{round=0,procs=run_procs(Count, Module, [])}};
+    {reply, ok, #state{alg=Module,round=0,procs=run_procs(Count, Module, [])}};
 handle_call({run, Count, Module}, _From, #state{stop=true}) ->
     %% Start over
-    {reply, ok, #state{round=0,procs=run_procs(Count, Module, [])}};
+    {reply, ok, #state{alg=Module,round=0,procs=run_procs(Count, Module, [])}};
 handle_call({run, _Count, _Module}, _From, State) ->
     {reply, already_running, State};
 handle_call(start_round, _From, #state{procs=[]}=State) ->
@@ -162,6 +180,13 @@ handle_call(dump, _From, #state{round=Round,procs=Procs}=State) ->
     Dump = [io_lib:format("Round: ~B~n", [Round]) |
             lists:map(fun(X) -> process:dump(X) end, Procs)],
     {reply, Dump, State};
+handle_call(complexity, _From, #state{alg=M,stop=true,procs=Procs,
+                                      msg_tally=Msgs,round=Rounds}=State) ->
+    %% TODO: Should gracefully handle algorithms that don't define
+    %% complexity/2
+    EstTime = M:complexity(time, length(Procs)),
+    EstMsgs = M:complexity(msgs, length(Procs)),
+    {reply, complexity_compare({EstTime, Rounds}, {EstMsgs, Msgs}), State};
 handle_call(info, _From, State) ->
     {reply, State, State}.
 
